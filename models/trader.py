@@ -10,9 +10,22 @@ from constants.defs import BINANCE_KEY, BINANCE_TESTNET_KEY, BINANCE_SECRET, BIN
 from technicals.indicators import EMAShort, EMAPER, ADX, RSI, EMALong
 
 class LongShortTrader:
-    def __init__(self, symbol, bar_length, units,strategy: SignalStrategy, signal_manager: SignalManager, 
-                 ema_s, ema_l, emaper_window, emaper_s, emaper_force, sl_percent, 
-                 rsi_force, rsi_window, adx_force, adx_window):
+    def __init__(self, 
+                 symbol, 
+                 bar_length, 
+                 units,
+                 strategy: SignalStrategy, 
+                 signal_manager: SignalManager, 
+                 ema_s, 
+                 ema_l, 
+                 emaper_window, 
+                 emaper_s, 
+                 emaper_force, 
+                 sl_percent, 
+                 rsi_force, 
+                 rsi_window, 
+                 adx_force, 
+                 adx_window):
         # Configuração inicial
         self.symbol = symbol
         self.bar_length = bar_length
@@ -29,8 +42,6 @@ class LongShortTrader:
         self.adx_window = adx_window
         self.trades = 0
         self.trade_values = []
-        self.opened_trades = deque()
-        self.closed_trades = deque()
         self.data = pd.DataFrame()
         self.strategy = strategy
         self.signal_manager = signal_manager
@@ -100,27 +111,35 @@ class LongShortTrader:
     def save_candle_to_db(self):
         candle_data = self.data.iloc[-1].to_dict()
         self.db.add_one(f"bot_{self.symbol}",candle_data)
-        print(f"Candle salvo para {self.symbol}: {candle_data}")
+        print(f"Candle salvo para {self.symbol}: {candle_data['Close']} - {candle_data['Time']}")
 
     def define_strategy(self):
         # Implementar lógica da estratégia
         self.prepared_data = self.data.copy()
+        
         self.prepared_data = EMAShort(self.prepared_data, self.ema_s)
         self.prepared_data = EMALong(self.prepared_data, self.ema_l)
-        self.prepared_data = EMAPER(self.prepared_data, self.emaper_window, self.emaper_s)
-        
         self.prepared_data = ADX(self.prepared_data, self.adx_window)
         self.prepared_data = RSI(self.prepared_data, self.rsi_window)
+        self.prepared_data = EMAPER(self.prepared_data, self.emaper_window, self.emaper_s)
         
-        self.prepared_data = self.strategy.detect_signals(self.prepared_data, self.emaper_force, 
-                                                 self.rsi_force, self.adx_force)
+        self.prepared_data.dropna(inplace=True)
+        self.prepared_data.reset_index(drop=True, inplace=True)
+    
+        self.prepared_data = self.strategy.detect_signals(self.prepared_data.copy(), 
+                                                          self.emaper_force,
+                                                          self.rsi_force, 
+                                                          self.adx_force)
 
+        print(self.prepared_data[['Time','Close','ADX', 'RSI','EMA_short','EMA_long', 'Emaper','Percent_Change','SIGNAL_UP','SIGNAL_DOWN']].tail(1))
+        
+        candle_prepared_data = self.prepared_data.iloc[-1]
         # Verifica sinais ao final do candle completo
-        if self.prepared_data.iloc[-1].SIGNAL_UP != 0 or self.prepared_data.iloc[-1].SIGNAL_DOWN != 0:
+        if candle_prepared_data.SIGNAL_UP != 0 or candle_prepared_data.SIGNAL_DOWN != 0:
             signal = {
                 "symbol": self.symbol,
-                "SIGNAL_UP": self.prepared_data.iloc[-1].SIGNAL_UP,
-                "SIGNAL_DOWN": self.prepared_data.iloc[-1].SIGNAL_DOWN,
+                "SIGNAL_UP": candle_prepared_data.SIGNAL_UP,
+                "SIGNAL_DOWN": candle_prepared_data.SIGNAL_DOWN,
                 "timestamp": self.prepared_data.index[-1]
             }
             self.signal_manager.register_signal(self.symbol, signal)  # Registra o sinal

@@ -72,10 +72,21 @@ class TraderManager:
         strategy = get_strategy(strategy_type)
 
         # Cria uma instância de trader e armazena no dicionário
-        trader = LongShortTrader(symbol, bar_length, units,strategy, 
-                                 self.signal_manager, ema_s, ema_l, emaper_window, 
-                                 emaper_s, emaper_force, sl_percent,
-                                 rsi_force, rsi_window, adx_force, adx_window)
+        trader = LongShortTrader(symbol, 
+                                 bar_length, 
+                                 units,
+                                 strategy, 
+                                 self.signal_manager, 
+                                 ema_s, 
+                                 ema_l, 
+                                 emaper_window, 
+                                 emaper_s, 
+                                 emaper_force, 
+                                 sl_percent,
+                                 rsi_force, 
+                                 rsi_window, 
+                                 adx_force, 
+                                 adx_window)
         trader.get_most_recent(symbol=symbol, interval=bar_length, days=historical_days)
         self.active_trader_instances[symbol] = trader
         self.signal_manager.total_tasks += 1  # Incrementa o número total de tasks no SignalManager
