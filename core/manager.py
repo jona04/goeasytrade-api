@@ -7,7 +7,16 @@ from binance import BinanceSocketManager, AsyncClient
 from datetime import datetime
 from core.strategies import get_strategy
 from core.signal_manager import SignalManager
-
+from datetime import datetime, timedelta
+from pytz import UTC
+from binance.client import Client
+import pandas as pd
+from constants.defs import (
+    BINANCE_KEY,
+    BINANCE_TESTNET_KEY,
+    BINANCE_SECRET,
+    BINANCE_TESTNET_SECRET,
+)
 
 class TraderManager:
     def __init__(self):
@@ -17,7 +26,9 @@ class TraderManager:
         self.bm = None
         self.db = DataDB()
         self.signal_manager = SignalManager(total_tasks=0)
-
+        self.candle_data = {}
+        self.active_streams = set()
+        
     async def init_binance_client(self):
         """Inicializa o cliente Binance e o Socket Manager."""
         self.client = await AsyncClient.create()
@@ -89,8 +100,12 @@ class TraderManager:
         if trade_id in self.active_trader_instances:
             return {
                 "status": "error",
-                "message": f"Trading is already running with the same parameters",
+                "message": f"Trading is already running with the same parameters - {trade_id}",
             }
+        
+        # Cria ou recupera o DataFrame centralizado para o símbolo
+        if symbol not in self.candle_data:
+            self.candle_data[symbol] = self.get_historical_data(symbol, bar_length, historical_days)
 
         # Define a estratégia com base no tipo especificado
         strategy = get_strategy(strategy_type)
@@ -112,10 +127,10 @@ class TraderManager:
             rsi_window,
             adx_force,
             adx_window,
-            trade_id
+            trade_id,
+            self
         )
-        trader.get_most_recent(symbol=symbol, interval=bar_length, days=historical_days)
-        self.active_trader_instances[symbol] = trader
+        self.active_trader_instances[trade_id] = trader
         self.signal_manager.total_tasks += 1
 
         # Salva a instância ativa no banco de dados
@@ -145,12 +160,45 @@ class TraderManager:
         # Inicia o stream de dados em segundo plano, garantindo que `bm` esteja pronto
         if self.bm is None:
             raise RuntimeError("BinanceSocketManager (bm) não foi inicializado.")
-
-        task = asyncio.create_task(stream_data(symbol, self.bm, trader, self))
+       
+        # Inicia o stream de dados em segundo plano, se ainda não estiver ativo para o símbolo
+        if symbol not in self.active_streams:
+            self.active_streams.add(symbol)  # Marcar o stream como ativo
+        
+        task = asyncio.create_task(stream_data(symbol, self.bm, trader))
         self.background_tasks.append(task)
-
+        
         return {"status": "success", "message": f"Trading started for {symbol}"}
 
+    def get_historical_data(self, symbol, interval, days):
+        """Obtem dados históricos de candle para um símbolo específico."""
+        now = datetime.now(UTC)
+        past = str(now - timedelta(days=days))
+
+        client = Client(api_key=BINANCE_KEY, api_secret=BINANCE_SECRET, tld="com")
+        bars = client.get_historical_klines(symbol=symbol, interval=interval, start_str=past, end_str=None)
+
+        df = pd.DataFrame(bars)
+        df["Date"] = pd.to_datetime(df.iloc[:, 0], unit="ms")
+        df.columns = [
+            "Open Time", "Open", "High", "Low", "Close", "Volume",
+            "Close Time", "Quote Asset Volume", "Number of Trades",
+            "Taker Buy Base Asset Volume", "Taker Buy Quote Asset Volume", "Ignore", "Date",
+        ]
+        df = df[["Date", "Open", "High", "Low", "Close", "Volume"]].copy()
+        
+        df["Time"] = df["Date"].copy()
+        
+        df.set_index("Date", inplace=True)
+        for column in df.columns:
+            if column != "Time":
+                df[column] = pd.to_numeric(df[column], errors="coerce")
+        df["Complete"] = [True for _ in range(len(df) - 1)] + [False]
+        
+        print(df.columns, df.shape)
+        
+        return df
+    
     async def stop_trading(self, trade_id):
         """Encerra a sessão de trading para um símbolo específico."""
         if trade_id in self.active_trader_instances:
@@ -170,3 +218,15 @@ class TraderManager:
         """Retorna a lista de traders ativos."""
         active_traders = list(self.db.query_all("active_traders"))
         return {"active_traders": active_traders}
+
+    def update_candle_data(self, symbol, candle_data):
+        """Atualiza os dados de candle centralizados e notifica traders ativos."""
+        # Adiciona o novo candle ao DataFrame centralizado
+        df = self.candle_data[symbol]
+        df.loc[candle_data["Date"]] = candle_data
+        self.candle_data[symbol] = df
+
+        # Notifica todas as instâncias de LongShortTrader para o símbolo
+        for trade_id, trader in self.active_trader_instances.items():
+            if trader.symbol == symbol:
+                trader.on_candle_update(candle_data)

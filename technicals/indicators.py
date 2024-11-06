@@ -58,16 +58,19 @@ def Donchian(df: pd.DataFrame, window=50):
 
 def EMA(df: pd.DataFrame, window: 50):
     df[f"EMA_{window}"] = df.Close.ewm(span=window, min_periods=window).mean()
+    df.dropna(inplace=True)
     return df
 
 
 def EMAShort(df: pd.DataFrame, window: 50):
     df[f"EMA_short"] = df.Close.ewm(span=window, min_periods=window).mean()
+    df.dropna(inplace=True)
     return df
 
 
 def EMALong(df: pd.DataFrame, window: 50):
     df[f"EMA_long"] = df.Close.ewm(span=window, min_periods=window).mean()
+    df.dropna(inplace=True)
     return df
 
 
@@ -114,7 +117,8 @@ def EMAPER(df: pd.DataFrame, window=14, ema_period_1=10):
     # Adiciona os resultados ao DataFrame original
     df["Percent_Change"] = percent_change
     df["Emaper"] = ema_1
-
+    df.dropna(inplace=True)
+    
     return df
 
 
@@ -143,7 +147,8 @@ def ADX(df: pd.DataFrame, period=14):
 
     # Remove colunas temporárias
     df.drop(columns=["+DM", "-DM", "TR"], inplace=True)
-
+    df.dropna(inplace=True)
+    
     return df
 
 
@@ -169,4 +174,6 @@ def RSI(df, period=14):
 
     # Adiciona o RSI ao DataFrame e retorna
     df["RSI"] = rsi
+    df.dropna(inplace=True)
+    
     return df

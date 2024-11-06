@@ -1,16 +1,8 @@
-from datetime import datetime, timedelta
+
 import pandas as pd
 from data.database import DataDB
-from pytz import UTC
-from binance.client import Client
 from core.strategies import SignalStrategy
 from core.signal_manager import SignalManager
-from constants.defs import (
-    BINANCE_KEY,
-    BINANCE_TESTNET_KEY,
-    BINANCE_SECRET,
-    BINANCE_TESTNET_SECRET,
-)
 from technicals.indicators import EMAShort, EMAPER, ADX, RSI, EMALong
 
 
@@ -32,7 +24,8 @@ class LongShortTrader:
         rsi_window,
         adx_force,
         adx_window,
-        trade_id
+        trade_id,
+        manager
     ):
         # Configuração inicial
         self.symbol = symbol
@@ -50,63 +43,13 @@ class LongShortTrader:
         self.adx_window = adx_window
         self.trades = 0
         self.trade_values = []
-        self.data = pd.DataFrame()
         self.strategy = strategy
         self.signal_manager = signal_manager
         self.trade_id = trade_id
-
+        self.manager = manager
+        self.data = self.manager.candle_data[self.symbol].copy()
         # Conexão com o MongoDB
         self.db = DataDB()
-
-    def get_most_recent(self, symbol, interval, days):
-        now = datetime.now(UTC)
-        past = str(now - timedelta(days=days))
-
-        client = Client(api_key=BINANCE_KEY, api_secret=BINANCE_SECRET, tld="com")
-        bars = client.get_historical_klines(
-            symbol=symbol, interval=interval, start_str=past, end_str=None
-        )
-
-        df = pd.DataFrame(bars)
-        df["Date"] = pd.to_datetime(df.iloc[:, 0], unit="ms")
-        df.columns = [
-            "Open Time",
-            "Open",
-            "High",
-            "Low",
-            "Close",
-            "Volume",
-            "Close Time",
-            "Quote Asset Volume",
-            "Number of Trades",
-            "Taker Buy Base Asset Volume",
-            "Taker Buy Quote Asset Volume",
-            "Ignore",
-            "Date",
-        ]
-        df = df[["Date", "Open", "High", "Low", "Close", "Volume"]].copy()
-
-        df["Time"] = df["Date"].copy()
-
-        df.set_index("Date", inplace=True)
-        for column in df.columns:
-            if column != "Time":
-                df[column] = pd.to_numeric(df[column], errors="coerce")
-        df["Complete"] = [True for _ in range(len(df) - 1)] + [False]
-
-        self.data = df.iloc[:-1]
-
-        # Salva todos os candles históricos no banco de dados
-        self.save_candles_to_db()
-
-    def save_candles_to_db(self):
-        """Salva todos os candles no banco de dados."""
-
-        # Converte todos os candles para uma lista de dicionários
-        candles = self.data.to_dict("records")
-        self.db.delete_many(f"bot_{self.symbol}")
-        self.db.add_many(f"bot_{self.symbol}", candles)
-        print(f"Todos os candles históricos foram salvos para {self.symbol}.")
 
     def stream_candles(self, msg):
         event_time = pd.to_datetime(msg["E"], unit="ms")
@@ -131,16 +74,16 @@ class LongShortTrader:
 
         # Salvar no MongoDB e processar estratégia ao final do candle
         if complete:
-            self.save_candle_to_db()
+            # self.save_candle_to_db()
             self.define_strategy()
             self.signal_manager.register_task_completion(
                 start_time
             )  # Notifica o SignalManager sobre a conclusão
             self.execute_trades()
 
-    def save_candle_to_db(self):
-        candle_data = self.data.iloc[-1].to_dict()
-        self.db.add_one(f"bot_{self.symbol}", candle_data)
+    def save_candle_strategy_to_db(self):
+        candle_data = self.prepared_data.iloc[-1].to_dict()
+        self.db.add_one(f"bot_{self.symbol}_{self.trade_id}", candle_data)
         print(
             f"Candle salvo para {self.symbol}: {candle_data['Close']} - {candle_data['Time']}"
         )
@@ -148,7 +91,8 @@ class LongShortTrader:
     def define_strategy(self):
         # Implementar lógica da estratégia
         self.prepared_data = self.data.copy()
-
+        
+        
         self.prepared_data = EMAShort(self.prepared_data, self.ema_s)
         self.prepared_data = EMALong(self.prepared_data, self.ema_l)
         self.prepared_data = ADX(self.prepared_data, self.adx_window)
@@ -164,6 +108,8 @@ class LongShortTrader:
             self.prepared_data.copy(), self.emaper_force, self.rsi_force, self.adx_force
         )
 
+        self.save_candle_strategy_to_db()
+        
         pd.set_option("display.max_rows", None)
         print(
             self.prepared_data[
