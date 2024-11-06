@@ -2,6 +2,7 @@ from pymongo import MongoClient, errors
 from constants.defs import MONGO_CONN
 from collections import defaultdict
 
+
 class DataDB:
     def __init__(self):
         self.client = MongoClient(MONGO_CONN)
@@ -22,26 +23,23 @@ class DataDB:
         except errors.InvalidOperation as error:
             print("add many error", error)
 
-
     def query_all_list(self, collection, limit=100, **kargs):
         try:
-            cursor = self.db[collection].find(kargs, {'_id':0}).limit(limit)
+            cursor = self.db[collection].find(kargs, {"_id": 0}).limit(limit)
 
             result = defaultdict(list)
             for item in cursor:
                 for key, value in item.items():
                     result[key].append(value)
-                    
+
             return result
         except errors.InvalidOperation as error:
             print("query_all error", error)
-    
-    
 
     def query_all(self, collection, limit=100, **kargs):
         try:
             data = []
-            r = self.db[collection].find(kargs, {'_id':0}).limit(limit)
+            r = self.db[collection].find(kargs, {"_id": 0}).limit(limit)
             for item in r:
                 data.append(item)
             return data
@@ -50,7 +48,7 @@ class DataDB:
 
     def query_single(self, collection, **kargs):
         try:
-            return self.db[collection].find_one(kargs, {'_id':0})
+            return self.db[collection].find_one(kargs, {"_id": 0})
         except errors.InvalidOperation as error:
             print("query_single error", error)
 
@@ -65,7 +63,7 @@ class DataDB:
             _ = self.db[collection].delete_one(kargs)
         except errors.InvalidOperation as error:
             print("delete_many error", error)
-            
+
     def delete_many(self, collection, **kargs):
         try:
             _ = self.db[collection].delete_many(kargs)
@@ -80,6 +78,8 @@ class DataDB:
 
     def update_many(self, collection, filter_criteria, update_values):
         try:
-            _ = self.db[collection].update_many(filter_criteria, {"$set": update_values})
+            _ = self.db[collection].update_many(
+                filter_criteria, {"$set": update_values}
+            )
         except errors.InvalidOperation as error:
             print("update_many error:", error)

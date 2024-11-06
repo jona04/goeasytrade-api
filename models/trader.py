@@ -5,22 +5,35 @@ from data.database import DataDB
 from pytz import UTC
 from binance.client import Client
 from core.strategies import SignalStrategy
+from core.signal_manager import SignalManager
 from constants.defs import BINANCE_KEY, BINANCE_TESTNET_KEY, BINANCE_SECRET, BINANCE_TESTNET_SECRET
+from technicals.indicators import EMAShort, EMAPER, ADX, RSI, EMALong
 
 class LongShortTrader:
-    def __init__(self, symbol, bar_length, ema_s, units, quote_units, strategy: SignalStrategy, position=0):
+    def __init__(self, symbol, bar_length, units,strategy: SignalStrategy, signal_manager: SignalManager, 
+                 ema_s, ema_l, emaper_window, emaper_s, emaper_force, sl_percent, 
+                 rsi_force, rsi_window, adx_force, adx_window):
         # Configuração inicial
         self.symbol = symbol
         self.bar_length = bar_length
         self.units = units
-        self.quote_units = quote_units
-        self.position = position
+        self.ema_s = ema_s
+        self.ema_l = ema_l
+        self.emaper_window = emaper_window
+        self.emaper_s = emaper_s
+        self.emaper_force = emaper_force
+        self.sl_percent = sl_percent
+        self.rsi_force = rsi_force
+        self.rsi_window = rsi_window
+        self.adx_force = adx_force
+        self.adx_window = adx_window
         self.trades = 0
         self.trade_values = []
         self.opened_trades = deque()
         self.closed_trades = deque()
         self.data = pd.DataFrame()
         self.strategy = strategy
+        self.signal_manager = signal_manager
         
         # Conexão com o MongoDB
         self.db = DataDB()
@@ -33,7 +46,7 @@ class LongShortTrader:
         bars = client.get_historical_klines(
             symbol=symbol, interval=interval, start_str=past, end_str=None
         )
-        print("bars",len(bars))
+        
         df = pd.DataFrame(bars)
         df["Date"] = pd.to_datetime(df.iloc[:, 0], unit="ms")
         df.columns = ["Open Time", "Open", "High", "Low", "Close", "Volume", "Close Time",
@@ -81,6 +94,7 @@ class LongShortTrader:
         if complete:
             self.save_candle_to_db()
             self.define_strategy()
+            self.signal_manager.register_task_completion(start_time)  # Notifica o SignalManager sobre a conclusão
             self.execute_trades()
 
     def save_candle_to_db(self):
@@ -90,8 +104,27 @@ class LongShortTrader:
 
     def define_strategy(self):
         # Implementar lógica da estratégia
-        self.data = self.strategy.detect_signals(self.data)
+        self.prepared_data = self.data.copy()
+        self.prepared_data = EMAShort(self.prepared_data, self.ema_s)
+        self.prepared_data = EMALong(self.prepared_data, self.ema_l)
+        self.prepared_data = EMAPER(self.prepared_data, self.emaper_window, self.emaper_s)
+        
+        self.prepared_data = ADX(self.prepared_data, self.adx_window)
+        self.prepared_data = RSI(self.prepared_data, self.rsi_window)
+        
+        self.prepared_data = self.strategy.detect_signals(self.prepared_data, self.emaper_force, 
+                                                 self.rsi_force, self.adx_force)
 
+        # Verifica sinais ao final do candle completo
+        if self.prepared_data.iloc[-1].SIGNAL_UP != 0 or self.prepared_data.iloc[-1].SIGNAL_DOWN != 0:
+            signal = {
+                "symbol": self.symbol,
+                "SIGNAL_UP": self.prepared_data.iloc[-1].SIGNAL_UP,
+                "SIGNAL_DOWN": self.prepared_data.iloc[-1].SIGNAL_DOWN,
+                "timestamp": self.prepared_data.index[-1]
+            }
+            self.signal_manager.register_signal(self.symbol, signal)  # Registra o sinal
+            
     def execute_trades(self):
         # Implementar lógica de execução de trades
         pass

@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+
 load_dotenv()
 
 SELL = -1
@@ -26,19 +27,14 @@ SECURE_HEADER = {
 }
 
 LABEL_MAP = {
-    'Open': 'o',
-    'High': 'h',
-    'Low': 'l',
-    'Close': 'c',
+    "Open": "o",
+    "High": "h",
+    "Low": "l",
+    "Close": "c",
 }
 
 THROTTLE_TIME = 0.3
 
-MONGO_CONN = 'mongodb://localhost:27017/'
+MONGO_CONN = "mongodb://localhost:27017/"
 
-TFS = {
-    "M1": 1,
-    "M5": 300,
-    "H15": 900,
-    "H1": 3600
-}
+TFS = {"M1": 1, "M5": 300, "H15": 900, "H1": 3600}

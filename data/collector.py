@@ -1,6 +1,7 @@
 import asyncio
 
-async def stream_data(symbol, bm, trader):
+
+async def stream_data(symbol, bm, trader, manager):
     """Stream de dados da Binance para um símbolo e instância de trader específica."""
     # Verificação extra para garantir que `bm` não é `None`
     if bm is None:
