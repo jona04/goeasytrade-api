@@ -65,7 +65,6 @@ class TraderManager:
         symbol,
         bar_length,
         units,
-        historical_days,
         strategy_type,
         ema_s,
         ema_l,
@@ -105,7 +104,7 @@ class TraderManager:
         
         # Cria ou recupera o DataFrame centralizado para o símbolo
         if symbol not in self.candle_data:
-            self.candle_data[symbol] = self.get_historical_data(symbol, bar_length, historical_days)
+            self.candle_data[symbol] = self.get_historical_data(symbol, bar_length)
 
         # Define a estratégia com base no tipo especificado
         strategy = get_strategy(strategy_type)
@@ -141,7 +140,6 @@ class TraderManager:
                 "symbol": symbol,
                 "bar_length": bar_length,
                 "units": units,
-                "historical_days": historical_days,
                 "strategy_type": strategy_type,
                 "ema_s": ema_s,
                 "ema_l": ema_l,
@@ -164,16 +162,40 @@ class TraderManager:
         # Inicia o stream de dados em segundo plano, se ainda não estiver ativo para o símbolo
         if symbol not in self.active_streams:
             self.active_streams.add(symbol)  # Marcar o stream como ativo
-        
-        task = asyncio.create_task(stream_data(symbol, self.bm, trader))
-        self.background_tasks.append(task)
-        
+            task = asyncio.create_task(stream_data(symbol, trade_id, self.bm, self))
+            self.background_tasks.append(task)
+            
         return {"status": "success", "message": f"Trading started for {symbol}"}
 
-    def get_historical_data(self, symbol, interval, days):
+    def process_stream_message(self, symbol, msg):
+        """Processa a mensagem de stream e verifica se o candle está completo."""
+        start_time = pd.to_datetime(msg["k"]["t"], unit="ms")
+        first = float(msg["k"]["o"])
+        high = float(msg["k"]["h"])
+        low = float(msg["k"]["l"])
+        close = float(msg["k"]["c"])
+        volume = float(msg["k"]["v"])
+        complete = msg["k"]["x"]
+
+        candle_data = [
+            first,
+            high,
+            low,
+            close,
+            volume,
+            start_time,
+            complete
+        ]
+
+        # Atualiza o DataFrame centralizado apenas quando o candle está completo
+        if complete:
+            self.update_candle_data(symbol, candle_data, start_time)
+
+    def get_historical_data(self, symbol, interval):
         """Obtem dados históricos de candle para um símbolo específico."""
+        print(f"Adicionando dados historicos para {symbol}......")
         now = datetime.now(UTC)
-        past = str(now - timedelta(days=days))
+        past = str(now - timedelta(days=8)) # 8 dias para ficar algo proximo de 10000 candles
 
         client = Client(api_key=BINANCE_KEY, api_secret=BINANCE_SECRET, tld="com")
         bars = client.get_historical_klines(symbol=symbol, interval=interval, start_str=past, end_str=None)
@@ -195,8 +217,7 @@ class TraderManager:
                 df[column] = pd.to_numeric(df[column], errors="coerce")
         df["Complete"] = [True for _ in range(len(df) - 1)] + [False]
         
-        print(df.columns, df.shape)
-        
+        print(f"Dados historicos para {symbol} adicionados!")
         return df
     
     async def stop_trading(self, trade_id):
@@ -219,14 +240,14 @@ class TraderManager:
         active_traders = list(self.db.query_all("active_traders"))
         return {"active_traders": active_traders}
 
-    def update_candle_data(self, symbol, candle_data):
+    def update_candle_data(self, symbol, candle_data, start_time):
         """Atualiza os dados de candle centralizados e notifica traders ativos."""
         # Adiciona o novo candle ao DataFrame centralizado
         df = self.candle_data[symbol]
-        df.loc[candle_data["Date"]] = candle_data
+        df.loc[start_time] = candle_data
         self.candle_data[symbol] = df
-
-        # Notifica todas as instâncias de LongShortTrader para o símbolo
+        
+        # Notifica todas as instâncias de LongShortTrader para o símbolo quando um candle estiver completo
         for trade_id, trader in self.active_trader_instances.items():
             if trader.symbol == symbol:
-                trader.on_candle_update(candle_data)
+                trader.define_strategy()

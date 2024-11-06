@@ -47,39 +47,8 @@ class LongShortTrader:
         self.signal_manager = signal_manager
         self.trade_id = trade_id
         self.manager = manager
-        self.data = self.manager.candle_data[self.symbol].copy()
         # Conexão com o MongoDB
         self.db = DataDB()
-
-    def stream_candles(self, msg):
-        event_time = pd.to_datetime(msg["E"], unit="ms")
-        start_time = pd.to_datetime(msg["k"]["t"], unit="ms")
-        first = float(msg["k"]["o"])
-        high = float(msg["k"]["h"])
-        low = float(msg["k"]["l"])
-        close = float(msg["k"]["c"])
-        volume = float(msg["k"]["v"])
-        complete = msg["k"]["x"]
-
-        # Atualizar o DataFrame com o novo candle
-        self.data.loc[start_time] = [
-            first,
-            high,
-            low,
-            close,
-            volume,
-            start_time,
-            complete,
-        ]
-
-        # Salvar no MongoDB e processar estratégia ao final do candle
-        if complete:
-            # self.save_candle_to_db()
-            self.define_strategy()
-            self.signal_manager.register_task_completion(
-                start_time
-            )  # Notifica o SignalManager sobre a conclusão
-            self.execute_trades()
 
     def save_candle_strategy_to_db(self):
         candle_data = self.prepared_data.iloc[-1].to_dict()
@@ -90,7 +59,7 @@ class LongShortTrader:
 
     def define_strategy(self):
         # Implementar lógica da estratégia
-        self.prepared_data = self.data.copy()
+        self.prepared_data = self.manager.candle_data[self.symbol].copy()
         
         
         self.prepared_data = EMAShort(self.prepared_data, self.ema_s)
