@@ -30,6 +30,7 @@ def KeltnerChannels(df: pd.DataFrame, n_ema=20, n_atr=10):
     df.drop(c_atr, axis=1, inplace=True)
     return df
 
+
 def MACD(df: pd.DataFrame, n_slow=26, n_fast=12, n_signal=9):
 
     ema_long = df.mid_c.ewm(min_periods=n_slow, span=n_slow).mean()
@@ -77,7 +78,9 @@ def calculate_percent_change(close_prices, window):
     for i in range(window, len(close_prices)):
         window_sum = 0.0
         for j in range(i - window + 1, i + 1):
-            percent_change[j] = (close_prices[j] - close_prices[j - 1]) / close_prices[j - 1] * 100
+            percent_change[j] = (
+                (close_prices[j] - close_prices[j - 1]) / close_prices[j - 1] * 100
+            )
             window_sum += percent_change[j]
         percent_change[i] = window_sum
 
@@ -146,20 +149,24 @@ def ADX(df: pd.DataFrame, period=14):
 
 def RSI(df, period=14):
     # Calcula as diferenças dos preços de fechamento
-    delta = df['Close'].diff()
-    
+    delta = df["Close"].diff()
+
     # Separa ganhos e perdas
     gain = np.where(delta > 0, delta, 0)
     loss = np.where(delta < 0, -delta, 0)
-    
+
     # Usa a média móvel exponencial para suavizar os ganhos e perdas
-    avg_gain = pd.Series(gain, index=df.index).ewm(alpha=1/period, min_periods=period).mean()
-    avg_loss = pd.Series(loss, index=df.index).ewm(alpha=1/period, min_periods=period).mean()
-    
+    avg_gain = (
+        pd.Series(gain, index=df.index).ewm(alpha=1 / period, min_periods=period).mean()
+    )
+    avg_loss = (
+        pd.Series(loss, index=df.index).ewm(alpha=1 / period, min_periods=period).mean()
+    )
+
     # Calcula o RSI
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
-    
+
     # Adiciona o RSI ao DataFrame e retorna
-    df['RSI'] = rsi
+    df["RSI"] = rsi
     return df
