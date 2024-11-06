@@ -1,0 +1,8 @@
+API_ID=ww
+API_KEY=ww
+API_SECRET=ww
+OPENFX_URL='https://marginalttdemowebapi.fxopen.net/api/v2/'
+BINANCE_KEY=
+BINANCE_SECRET=
+BINANCE_TESNET_KEY=
+BINANCE_TESTNET_SECRET=
