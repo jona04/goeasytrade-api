@@ -4,10 +4,11 @@ import pandas as pd
 from data.database import DataDB
 from pytz import UTC
 from binance.client import Client
+from core.strategies import SignalStrategy
 from constants.defs import BINANCE_KEY, BINANCE_TESTNET_KEY, BINANCE_SECRET, BINANCE_TESTNET_SECRET
 
 class LongShortTrader:
-    def __init__(self, symbol, bar_length, ema_s, units, quote_units, position=0):
+    def __init__(self, symbol, bar_length, ema_s, units, quote_units, strategy: SignalStrategy, position=0):
         # Configuração inicial
         self.symbol = symbol
         self.bar_length = bar_length
@@ -19,7 +20,7 @@ class LongShortTrader:
         self.opened_trades = deque()
         self.closed_trades = deque()
         self.data = pd.DataFrame()
-        self.strategy = None
+        self.strategy = strategy
         
         # Conexão com o MongoDB
         self.db = DataDB()
@@ -56,15 +57,9 @@ class LongShortTrader:
     def save_candles_to_db(self):
         """Salva todos os candles no banco de dados."""
         
-        print(self.data.head())
-        print(self.data.tail())
-        print(self.data.shape)
         # Converte todos os candles para uma lista de dicionários
         candles = self.data.to_dict("records")
-
         self.db.delete_many(f"bot_{self.symbol}")
-        
-        # Insere todos os candles de uma vez no MongoDB
         self.db.add_many(f"bot_{self.symbol}", candles)
         print(f"Todos os candles históricos foram salvos para {self.symbol}.")
         
@@ -95,7 +90,7 @@ class LongShortTrader:
 
     def define_strategy(self):
         # Implementar lógica da estratégia
-        pass
+        self.data = self.strategy.detect_signals(self.data)
 
     def execute_trades(self):
         # Implementar lógica de execução de trades

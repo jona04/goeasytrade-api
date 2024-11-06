@@ -4,6 +4,7 @@ from models.trader import LongShortTrader
 from data.database import DataDB
 from binance import BinanceSocketManager, AsyncClient
 from datetime import datetime
+from core.strategies import get_strategy
 
 class TraderManager:
     def __init__(self):
@@ -39,14 +40,17 @@ class TraderManager:
         if self.client:
             await self.client.close_connection()
 
-    async def start_trading(self, symbol, bar_length, ema_s, units, quote_units, historical_days):
+    async def start_trading(self, symbol, bar_length, ema_s, units, quote_units, historical_days, strategy_type):
         """Inicia uma sessão de trading para um símbolo específico."""
         # Verifique se já existe uma sessão ativa
         if symbol in self.active_trader_instances:
             return {"status": "error", "message": f"Trading is already running for {symbol}"}
         
+        # Define a estratégia com base no tipo especificado
+        strategy = get_strategy(strategy_type)
+        
         # Cria uma instância de trader e armazena no dicionário
-        trader = LongShortTrader(symbol, bar_length, ema_s, units, quote_units)
+        trader = LongShortTrader(symbol, bar_length, ema_s, units, quote_units, strategy)
         trader.get_most_recent(symbol=symbol, interval=bar_length, days=historical_days)
         self.active_trader_instances[symbol] = trader
 
@@ -56,6 +60,7 @@ class TraderManager:
             "bar_length": bar_length,
             "units": units,
             "quote_units": quote_units,
+            "strategy_type": strategy_type,
             "start_time": datetime.now()
         })
 
