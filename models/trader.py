@@ -53,13 +53,13 @@ class LongShortTrader:
     def save_candle_strategy_to_db(self):
         candle_data = self.prepared_data.iloc[-1].to_dict()
         self.db.add_one(f"bot_{self.symbol}_{self.trade_id}", candle_data)
-        print(
-            f"Candle salvo para {self.symbol}: {candle_data['Close']} - {candle_data['Time']}"
-        )
+        # print(
+        #     f"Candle salvo para {self.symbol}: {candle_data['Close']} - {candle_data['Time']}"
+        # )
 
     def define_strategy(self):
         # Implementar lógica da estratégia
-        self.prepared_data = self.manager.candle_data[self.symbol].copy()
+        self.prepared_data = self.manager.candle_data[self.symbol].copy()[-self.ema_l-1000:]
         
         
         self.prepared_data = EMAShort(self.prepared_data, self.ema_s)
@@ -77,23 +77,25 @@ class LongShortTrader:
             self.prepared_data.copy(), self.emaper_force, self.rsi_force, self.adx_force
         )
 
+        # print(f"Prepared data for {self.trade_id} - with size {self.prepared_data.shape[0]}")
+        pd.set_option("display.max_rows", None)
+        
         self.save_candle_strategy_to_db()
         
-        pd.set_option("display.max_rows", None)
-        print(
-            self.prepared_data[
-                [
-                    "Time",
-                    "Close",
-                    "EMA_long",
-                    "Emaper",
-                    "SIGNAL_UP",
-                    "SIGNAL_UP_FIRST",
-                    "SIGNAL_UP_CONTINUE",
-                    "SIGNAL_UP_EXIT"
-                ]
-            ].tail(1)
-        )
+        # print(
+        #     self.prepared_data[
+        #         [
+        #             "Time",
+        #             "Close",
+        #             "EMA_long",
+        #             "Emaper",
+        #             "SIGNAL_UP",
+        #             "SIGNAL_UP_FIRST",
+        #             "SIGNAL_UP_CONTINUE",
+        #             "SIGNAL_UP_EXIT"
+        #         ]
+        #     ].tail(1)
+        # )
 
         candle_prepared_data = self.prepared_data.iloc[-1]
         # Verifica sinais ao final do candle completo
@@ -105,6 +107,7 @@ class LongShortTrader:
                 "timestamp": self.prepared_data.index[-1],
             }
             self.signal_manager.register_signal(self.trade_id, signal)  # Registra o sinal
+            print(f"################## Signal registered for {self.trade_id}! #############################")
 
     def execute_trades(self):
         # Implementar lógica de execução de trades
