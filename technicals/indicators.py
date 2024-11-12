@@ -102,6 +102,23 @@ def calculate_ema(values, period):
     return ema
 
 
+
+# Função para calcular a variação percentual acumulada com uma janela deslizante correta
+def PAV(close_prices, window):
+    percent_change = np.zeros(len(close_prices))
+
+    for i in range(window, len(close_prices)):
+        window_sum = 0.0
+        for j in range(i - window + 1, i + 1):
+            # Calcula a variação percentual entre o ponto atual e o ponto anterior
+            change = (close_prices[j] - close_prices[j - 1]) / close_prices[j - 1] * 100
+            window_sum += change
+        # Atribui o valor acumulado da janela atual ao ponto final da janela
+        percent_change[i] = window_sum
+
+    return percent_change
+
+
 # Função para calcular os indicadores e adicionar ao DataFrame
 def EMAPER(df: pd.DataFrame, window=14, ema_period_1=10):
 
@@ -109,7 +126,7 @@ def EMAPER(df: pd.DataFrame, window=14, ema_period_1=10):
     close_prices = df["EMA_short"].values
 
     # Calcula a variação percentual acumulada
-    percent_change = calculate_percent_change(close_prices, window)
+    percent_change = PAV(close_prices, window)
 
     # Calcula as EMAs
     ema_1 = calculate_ema(percent_change, ema_period_1)
@@ -120,7 +137,6 @@ def EMAPER(df: pd.DataFrame, window=14, ema_period_1=10):
     df.dropna(inplace=True)
     
     return df
-
 
 def ADX(df: pd.DataFrame, period=14):
     # Calcula +DM, -DM e TR

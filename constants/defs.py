@@ -19,6 +19,8 @@ BINANCE_SECRET = os.environ.get("BINANCE_SECRET")
 BINANCE_TESTNET_KEY = os.environ.get("BINANCE_TESTNET_KEY")
 BINANCE_TESTNET_SECRET = os.environ.get("BINANCE_TESTNET_SECRET")
 
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+CHAT_TELEGRAM_ID = os.environ.get("CHAT_TELEGRAM_ID")
 
 SECURE_HEADER = {
     "Authorization": f"Basic {API_ID}:{API_KEY}:{API_SECRET}",

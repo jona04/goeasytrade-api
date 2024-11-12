@@ -3,8 +3,10 @@ import pandas as pd
 from data.database import DataDB
 from core.strategies import SignalStrategy
 from core.signal_manager import SignalManager
-from technicals.indicators import EMAShort, EMAPER, ADX, RSI, EMALong
-
+from core.telegram_bot import run_bot
+from technicals.indicators import EMAShort, EMAPER, calculate_ema, PAV, ADX, RSI, EMALong
+from constants.defs import (CHAT_TELEGRAM_ID)
+import asyncio
 
 class LongShortTrader:
     def __init__(
@@ -18,6 +20,7 @@ class LongShortTrader:
         ema_l,
         emaper_window,
         emaper_s,
+        emaper_l,
         emaper_force,
         sl_percent,
         rsi_force,
@@ -35,6 +38,7 @@ class LongShortTrader:
         self.ema_l = ema_l
         self.emaper_window = emaper_window
         self.emaper_s = emaper_s
+        self.emaper_l = emaper_l
         self.emaper_force = emaper_force
         self.sl_percent = sl_percent
         self.rsi_force = rsi_force
@@ -59,17 +63,34 @@ class LongShortTrader:
 
     def define_strategy(self):
         # Implementar lógica da estratégia
-        self.prepared_data = self.manager.candle_data[self.symbol].copy()[-self.ema_l-1000:]
+        self.prepared_data = self.manager.candle_data[self.symbol].copy()[-1000:]
         
         
         self.prepared_data = EMAShort(self.prepared_data, self.ema_s)
-        self.prepared_data = EMALong(self.prepared_data, self.ema_l)
-        self.prepared_data = ADX(self.prepared_data, self.adx_window)
-        self.prepared_data = RSI(self.prepared_data, self.rsi_window)
-        self.prepared_data = EMAPER(
-            self.prepared_data, self.emaper_window, self.emaper_s
-        )
+        # self.prepared_data = EMALong(self.prepared_data, self.ema_l)
+        # self.prepared_data = ADX(self.prepared_data, self.adx_window)
+        # self.prepared_data = RSI(self.prepared_data, self.rsi_window)
+        
+        # self.prepared_data = EMAPER(
+        #     self.prepared_data, self.emaper_window, 10
+        # )
+        
+        self.prepared_data['Percent_Change_10'] = PAV(self.prepared_data['EMA_short'].values, 10)
+        self.prepared_data['EMA_percent_s_10'] = calculate_ema(self.prepared_data['Percent_Change_10'].values, 10)
 
+        self.prepared_data['Percent_Change_50'] = PAV(self.prepared_data['EMA_short'].values, 50)
+        self.prepared_data['EMA_percent_s_50'] = calculate_ema(self.prepared_data['Percent_Change_50'].values, 10)
+        
+        self.prepared_data['Percent_Change_150'] = PAV(self.prepared_data['EMA_short'].values, 150)
+        self.prepared_data['EMA_percent_s_150'] = calculate_ema(self.prepared_data['Percent_Change_150'].values, 10)
+
+        self.prepared_data['Percent_Change_200'] = PAV(self.prepared_data['EMA_short'].values, 200)
+        self.prepared_data['EMA_percent_s_200'] = calculate_ema(self.prepared_data['Percent_Change_200'].values, 10)
+        
+        self.prepared_data['Average_EMA_percent'] = self.prepared_data[['EMA_percent_s_10', 'EMA_percent_s_50', 'EMA_percent_s_150','EMA_percent_s_200']].mean(axis=1)
+        self.prepared_data['Average_EMA_percent_ema_short'] = calculate_ema(self.prepared_data['Average_EMA_percent'].values, self.emaper_s)
+        self.prepared_data['Average_EMA_percent_ema_long'] = calculate_ema(self.prepared_data['Average_EMA_percent'].values, self.emaper_l)
+    
         self.prepared_data.dropna(inplace=True)
         self.prepared_data.reset_index(drop=True, inplace=True)
 
@@ -79,6 +100,7 @@ class LongShortTrader:
 
         # print(f"Prepared data for {self.trade_id} - with size {self.prepared_data.shape[0]}")
         pd.set_option("display.max_rows", None)
+        pd.set_option("display.max_columns", None)
         
         self.save_candle_strategy_to_db()
         
@@ -87,12 +109,8 @@ class LongShortTrader:
         #         [
         #             "Time",
         #             "Close",
-        #             "EMA_long",
-        #             "Emaper",
-        #             "SIGNAL_UP",
-        #             "SIGNAL_UP_FIRST",
-        #             "SIGNAL_UP_CONTINUE",
-        #             "SIGNAL_UP_EXIT"
+        #             "Average_EMA_percent_ema_short",
+        #             "Average_EMA_percent_ema_long"
         #         ]
         #     ].tail(1)
         # )
@@ -102,13 +120,15 @@ class LongShortTrader:
         if candle_prepared_data.SIGNAL_UP_FIRST != 0 or candle_prepared_data.SIGNAL_DOWN_FIRST != 0:
             signal = {
                 "trade_id": self.trade_id,
-                "SIGNAL_UP": candle_prepared_data.SIGNAL_UP,
-                "SIGNAL_DOWN": candle_prepared_data.SIGNAL_DOWN,
-                "timestamp": self.prepared_data.index[-1],
+                "Time": candle_prepared_data.Time
             }
             self.signal_manager.register_signal(self.trade_id, signal)  # Registra o sinal
-            print(f"################## Signal registered for {self.trade_id}! #############################")
-
+            message = "################## Signal registered for "+self.trade_id+"! #############################"
+            print(message)
+            print(f"Time = {candle_prepared_data.Time}")
+            print("")
+            asyncio.create_task(run_bot([message], CHAT_TELEGRAM_ID))
+            
     def execute_trades(self):
         # Implementar lógica de execução de trades
         pass
