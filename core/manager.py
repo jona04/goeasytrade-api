@@ -193,6 +193,7 @@ class TraderManager:
 
         # Atualiza o DataFrame centralizado apenas quando o candle está completo
         if complete:
+            self.signal_manager.register_task_completion(start_time)  # Notifica o SignalManager sobre a conclusão
             self.update_candle_data(symbol, candle_data, start_time)
 
     def get_historical_data(self, symbol, interval):
