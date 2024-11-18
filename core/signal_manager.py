@@ -2,15 +2,17 @@ from collections import defaultdict
 from typing import Dict
 import pandas as pd
 from data.database import DataDB
+from operations.trade_executor import TradeExecutor
 
 class SignalManager:
-    def __init__(self, total_tasks, db):
+    def __init__(self, total_tasks):
         # Armazena sinais como um dicionário onde as chaves são os símbolos e o valor é uma lista de sinais
         self.signals = defaultdict(list)
         self.last_processed_timestamp = None
         self.total_tasks = total_tasks
         self.completed_tasks_count = 0
         self.db = DataDB()
+        self.trade_executor = TradeExecutor(self.db, self)
 
     def register_signal(self, trade_id: str, signal: Dict):
         """Registra um sinal para um símbolo específico."""
@@ -33,10 +35,8 @@ class SignalManager:
         A coleção será chamada de 'priority_criteria'.
         """
         priority_data = [
-            {"emaper_s": 50, "emaper_l": 100, "emaper_force": 5, "sl_percent": -0.04},
             {"emaper_s": 50, "emaper_l": 100, "emaper_force": 5, "sl_percent": -0.03},
             {"emaper_s": 50, "emaper_l": 100, "emaper_force": 4, "sl_percent": -0.03},
-            {"emaper_s": 50, "emaper_l": 100, "emaper_force": 4, "sl_percent": -0.04},
             {"emaper_s": 50, "emaper_l": 100, "emaper_force": 5, "sl_percent": -0.02},
             {"emaper_s": 50, "emaper_l": 100, "emaper_force": 4, "sl_percent": -0.02},
             {"emaper_s": 50, "emaper_l": 100, "emaper_force": 5, "sl_percent": -0.01},
@@ -115,24 +115,26 @@ class SignalManager:
 
     def process_signals(self):
         """Processa sinais coletados e decide qual operação abrir, se houver."""
-        print("Processa sinal!")
         signals = self.get_signals()
-
+        print(signals)
+        
         # Seleciona os 10 melhores sinais com base nos critérios do banco de dados
         top_signals = self.select_top_signals(signals, top_n=10)
 
         # A lógica de decisão com os sinais selecionados
         if top_signals:
             for trade_params, signal in top_signals:
-                print("")
-                print("#" * 20)
-                print(f"Abrindo operação para o sinal {signal}")
-                print("#" * 20)
-                print("")
-                # Aqui você chamaria a função que executa a ordem real (abrir posição)
+                print(f"Abrindo operação para o sinal: {signal}")
+                self.trade_executor.execute_trade(trade_params, signal)
 
     def get_signals(self):
         """Retorna todos os sinais registrados e limpa o registro para o próximo candle."""
         signals = dict(self.signals)
         self.signals.clear()  # Limpa os sinais após a consulta
         return signals
+
+    def check_signals(self):
+        """
+        Retorna os sinais atuais sem limpá-los.
+        """
+        return dict(self.signals)

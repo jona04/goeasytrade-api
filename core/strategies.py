@@ -6,7 +6,7 @@ import numpy as np
 class SignalStrategy(ABC):
     @abstractmethod
     def detect_signals(
-        self, df: pd.DataFrame, emaper_force, rsi_force, adx_force
+        self, df: pd.DataFrame, emaper_force
     ) -> pd.DataFrame:
         pass
 
@@ -1246,7 +1246,7 @@ class Strategy12(SignalStrategy):
 
 class Strategy13(SignalStrategy):
     def detect_signals(
-        self, df: pd.DataFrame, emaper_force, rsi_force, adx_force
+        self, df: pd.DataFrame, emaper_force
     ) -> pd.DataFrame:
         """
         Função para detectar sinais de compra e venda com base no cruzamento de

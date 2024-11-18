@@ -4,7 +4,7 @@ from data.database import DataDB
 from core.strategies import SignalStrategy
 from core.signal_manager import SignalManager
 from core.telegram_bot import run_bot
-from technicals.indicators import EMAShort, EMAPER, calculate_ema, PAV, ADX, RSI, EMALong
+from technicals.indicators import EMAShort, calculate_ema, PAV
 from constants.defs import (CHAT_TELEGRAM_ID)
 import asyncio
 import mplfinance as mpf
@@ -15,40 +15,24 @@ class LongShortTrader:
         self,
         symbol,
         bar_length,
-        units,
         strategy: SignalStrategy,
         signal_manager: SignalManager,
         ema_s,
-        ema_l,
-        emaper_window,
         emaper_s,
         emaper_l,
         emaper_force,
         sl_percent,
-        rsi_force,
-        rsi_window,
-        adx_force,
-        adx_window,
         trade_id,
         manager
     ):
         # Configuração inicial
         self.symbol = symbol
         self.bar_length = bar_length
-        self.units = units
         self.ema_s = ema_s
-        self.ema_l = ema_l
-        self.emaper_window = emaper_window
         self.emaper_s = emaper_s
         self.emaper_l = emaper_l
         self.emaper_force = emaper_force
         self.sl_percent = sl_percent
-        self.rsi_force = rsi_force
-        self.rsi_window = rsi_window
-        self.adx_force = adx_force
-        self.adx_window = adx_window
-        self.trades = 0
-        self.trade_values = []
         self.strategy = strategy
         self.signal_manager = signal_manager
         self.trade_id = trade_id
@@ -63,9 +47,9 @@ class LongShortTrader:
         #     f"Candle salvo para {self.symbol}: {candle_data['Close']} - {candle_data['Time']}"
         # )
 
-    def define_strategy(self):
+    def define_strategy(self, start_time):
         # Implementar lógica da estratégia
-        self.prepared_data = self.manager.candle_data[self.symbol].copy()[-1000:]
+        self.prepared_data = self.manager.candle_data[self.symbol].copy()[-500:]
         
         self.prepared_data = EMAShort(self.prepared_data, self.ema_s)
         self.prepared_data['Percent_Change_10'] = PAV(self.prepared_data['EMA_short'].values, 10)
@@ -81,27 +65,10 @@ class LongShortTrader:
         self.prepared_data['Average_EMA_percent_ema_long'] = calculate_ema(self.prepared_data['Average_EMA_percent'].values, self.emaper_l)
         self.prepared_data.dropna(inplace=True)
         self.prepared_data.reset_index(drop=True, inplace=True)
-        self.prepared_data = self.strategy.detect_signals(
-            self.prepared_data.copy(), self.emaper_force, self.rsi_force, self.adx_force
-        )
+        self.prepared_data = self.strategy.detect_signals(self.prepared_data.copy(), self.emaper_force)
 
-        # print(f"Prepared data for {self.trade_id} - with size {self.prepared_data.shape[0]}")
-        # pd.set_option("display.max_rows", None)
-        # pd.set_option("display.max_columns", None)
-        
         self.save_candle_strategy_to_db()
-        
-        # print(
-        #     self.prepared_data[
-        #         [
-        #             "Time",
-        #             "Close",
-        #             "Average_EMA_percent_ema_short",
-        #             "Average_EMA_percent_ema_long"
-        #         ]
-        #     ].tail(1)
-        # )
-
+      
         
         candle_prepared_data = self.prepared_data.iloc[-1]
         # Verifica sinais ao final do candle completo
@@ -145,6 +112,11 @@ class LongShortTrader:
             print("")
             
             asyncio.create_task(run_bot([message, ("photo", img_path)], CHAT_TELEGRAM_ID))
+        
+        # Notifica o SignalManager sobre a conclusão conclusão da stratégia para um trader strategy
+        self.signal_manager.register_task_completion(start_time)
+        
+        
     def execute_trades(self):
         # Implementar lógica de execução de trades
         pass

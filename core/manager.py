@@ -36,12 +36,22 @@ class TraderManager:
 
     async def close_binance_client(self):
         """Fecha o cliente Binance e cancela as tarefas em segundo plano."""
-        # Limpa a tabela 'active_traders' no MongoDB
+        # Atualiza todos os traders no banco de dados para inativos
         try:
-            self.db.delete_many("active_traders")
-            print("Tabela 'active_traders' limpa com sucesso.")
+            self.db.update_many("active_traders", {}, {"active": False})
+            print("Todos os active_traders foram marcados como inativos no banco de dados.")
         except Exception as e:
-            print(f"Erro ao limpar a tabela 'active_traders': {e}")
+            print(f"Erro ao atualizar active_traders no banco de dados: {e}")
+
+        # Cancela todas as instâncias de traders ativos em memória
+        for trade_id, trader in self.active_trader_instances.items():
+            try:
+                # Remove o símbolo de streams ativos, se aplicável
+                if trader.symbol in self.active_streams:
+                    self.active_streams.remove(trader.symbol)
+            except Exception as e:
+                print(f"Erro ao cancelar stream para trade_id {trade_id}: {e}")
+        self.active_trader_instances.clear()  # Limpa todas as instâncias locais
 
         # Cancela todas as tarefas em segundo plano
         for task in self.background_tasks:
@@ -53,7 +63,12 @@ class TraderManager:
 
         # Fecha a conexão com o cliente Binance
         if self.client:
-            await self.client.close_connection()
+            try:
+                await self.client.close_connection()
+                print("Conexão com o cliente Binance encerrada com sucesso.")
+            except Exception as e:
+                print(f"Erro ao fechar a conexão com o cliente Binance: {e}")
+
 
     def _generate_trade_id(self, **params):
         """Gera um identificador único para o conjunto de parâmetros do trade."""
@@ -64,19 +79,12 @@ class TraderManager:
         self,
         symbol,
         bar_length,
-        units,
         strategy_type,
         ema_s,
-        ema_l,
-        emaper_window,
         emaper_s,
         emaper_l,
         emaper_force,
         sl_percent,
-        rsi_force,
-        rsi_window,
-        adx_force,
-        adx_window,
     ):
         """Inicia uma sessão de trading para um conjunto de parâmetros específicos."""
         params = {
@@ -84,26 +92,43 @@ class TraderManager:
             "bar_length": bar_length,
             "strategy_type": strategy_type,
             "ema_s": ema_s,
-            "ema_l": ema_l,
-            "emaper_window": emaper_window,
             "emaper_s": emaper_s,
             "emaper_l": emaper_l,
             "emaper_force": emaper_force,
             "sl_percent": sl_percent,
-            "rsi_force": rsi_force,
-            "rsi_window": rsi_window,
-            "adx_force": adx_force,
-            "adx_window": adx_window,
         }
         trade_id = self._generate_trade_id(**params)
 
-        # Verifique se já existe uma sessão ativa
-        if trade_id in self.active_trader_instances:
-            return {
-                "status": "error",
-                "message": f"Trading is already running with the same parameters - {trade_id}",
-            }
-        
+        # Verifique se já existe um trade no banco de dados
+        existing_trade = self.db.query_single("active_traders", trade_id=trade_id)
+        if existing_trade:
+            if existing_trade["active"]:
+                return {
+                    "status": "error",
+                    "message": f"Trading is already running with the same parameters - {trade_id}",
+                }
+            else:
+                # Atualiza o registro existente para ativo
+                self.db.update_one("active_traders", {"trade_id": trade_id}, {"active": True, "start_time": datetime.now()})
+                # Reinstancia o objeto `LongShortTrader`
+                strategy = get_strategy(strategy_type)
+                trader = LongShortTrader(
+                    symbol,
+                    bar_length,
+                    strategy,
+                    self.signal_manager,
+                    ema_s,
+                    emaper_s,
+                    emaper_l,
+                    emaper_force,
+                    sl_percent,
+                    trade_id,
+                    self
+                )
+                self.active_trader_instances[trade_id] = trader
+                return {"status": "success", "message": f"Trading restarted for {symbol}"}
+
+            
         # Cria ou recupera o DataFrame centralizado para o símbolo
         if symbol not in self.candle_data:
             self.candle_data[symbol] = self.get_historical_data(symbol, bar_length)
@@ -115,46 +140,33 @@ class TraderManager:
         trader = LongShortTrader(
             symbol,
             bar_length,
-            units,
             strategy,
             self.signal_manager,
             ema_s,
-            ema_l,
-            emaper_window,
             emaper_s,
             emaper_l,
             emaper_force,
             sl_percent,
-            rsi_force,
-            rsi_window,
-            adx_force,
-            adx_window,
             trade_id,
             self
         )
         self.active_trader_instances[trade_id] = trader
         self.signal_manager.total_tasks += 1
 
-        # Salva a instância ativa no banco de dados
+        # Salva a instância ativa no banco de dados com o status ativo
         self.db.add_one(
             "active_traders",
             {
                 "trade_id": trade_id,
                 "symbol": symbol,
                 "bar_length": bar_length,
-                "units": units,
                 "strategy_type": strategy_type,
                 "ema_s": ema_s,
-                "ema_l": ema_l,
-                "emaper_window": emaper_window,
                 "emaper_s": emaper_s,
                 "emaper_l": emaper_l,
                 "emaper_force": emaper_force,
                 "sl_percent": sl_percent,
-                "rsi_force": rsi_force,
-                "rsi_window": rsi_window,
-                "adx_force": adx_force,
-                "adx_window": adx_window,
+                "active": True,
                 "start_time": datetime.now(),
             },
         )
@@ -193,7 +205,6 @@ class TraderManager:
 
         # Atualiza o DataFrame centralizado apenas quando o candle está completo
         if complete:
-            self.signal_manager.register_task_completion(start_time)  # Notifica o SignalManager sobre a conclusão
             self.update_candle_data(symbol, candle_data, start_time)
 
     def get_historical_data(self, symbol, interval):
@@ -227,9 +238,18 @@ class TraderManager:
     
     async def stop_trading(self, trade_id):
         """Encerra a sessão de trading para um símbolo específico."""
-        if trade_id in self.active_trader_instances:
-            self.db.delete_single("active_traders", trade_id=trade_id)
+        # Verifica se o trade_id existe em active_trader_instances
+        trader = self.active_trader_instances.get(trade_id)
+
+        if trader:
+            # Remove a instância do dicionário ativo
             self.active_trader_instances.pop(trade_id)
+
+        # Verifica o banco de dados
+        existing_trade = self.db.query_single("active_traders", trade_id=trade_id, active=True)
+        if existing_trade:
+            # Atualiza o banco de dados para marcar o trade como inativo
+            self.db.update_one("active_traders", {"trade_id": trade_id}, {"active": False})
             return {
                 "status": "success",
                 "message": f"Trading stopped for trade_id {trade_id}",
@@ -240,9 +260,10 @@ class TraderManager:
             "message": f"No active trading session for trade_id {trade_id}",
         }
 
+
     def get_active_traders(self):
         """Retorna a lista de traders ativos."""
-        active_traders = list(self.db.query_all("active_traders"))
+        active_traders = self.db.query_all("active_traders", active=True)
         return {"active_traders": active_traders}
 
     def update_candle_data(self, symbol, candle_data, start_time):
@@ -255,4 +276,4 @@ class TraderManager:
         # Notifica todas as instâncias de LongShortTrader para o símbolo quando um candle estiver completo
         for trade_id, trader in self.active_trader_instances.items():
             if trader.symbol == symbol:
-                trader.define_strategy()
+                trader.define_strategy(start_time)
