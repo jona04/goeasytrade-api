@@ -70,11 +70,20 @@ class DataDB:
         except errors.InvalidOperation as error:
             print("delete_many error", error)
 
-    def update_one(self, collection, filter_criteria, update_values):
+    def update_one(self, collection, filter_criteria, update_values, upsert=False):
+        """
+        Atualiza um documento na coleção especificada.
+        :param collection: Nome da coleção.
+        :param filter_criteria: Critérios de filtro para encontrar o documento.
+        :param update_values: Valores para atualizar.
+        :param upsert: Se True, cria o documento caso ele não exista.
+        """
         try:
-            _ = self.db[collection].update_one(filter_criteria, {"$set": update_values})
-        except errors.InvalidOperation as error:
-            print("update_one error:", error)
+            result = self.db[collection].update_one(filter_criteria, {"$set": update_values}, upsert=upsert)
+            return result
+        except Exception as error:
+            print("Erro no update_one:", error)
+            return None
 
     def update_many(self, collection, filter_criteria, update_values):
         try:

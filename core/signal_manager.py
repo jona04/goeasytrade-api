@@ -12,7 +12,7 @@ class SignalManager:
         self.total_tasks = total_tasks
         self.completed_tasks_count = 0
         self.db = DataDB()
-        self.trade_executor = TradeExecutor(self.db, self)
+        self.trade_executor = TradeExecutor()
 
     def register_signal(self, trade_id: str, signal: Dict):
         """Registra um sinal para um símbolo específico."""

@@ -11,12 +11,11 @@ from constants.defs import (
 )
 
 class TradeExecutor:
-    def __init__(self, binance_client: Client):
+    def __init__(self):
         """
         Inicializa o TradeExecutor com a API Binance.
         :param binance_client: Instância do cliente da API Binance.
         """
-        self.client = binance_client
         self.db = DataDB()
         self.client = Client(api_key=BINANCE_KEY, api_secret=BINANCE_SECRET, tld="com")
         
@@ -135,7 +134,7 @@ class TradeExecutor:
     def check_and_close_tp_sl_orders(self):
         """
         Verifica as ordens de TP e SL associadas a trades abertos.
-        Atualiza o banco de dados caso uma ordem tenha sido executada.
+        Atualiza o banco de dados caso uma ordem tenha sido executada e cancela as ordens restantes.
         """
         try:
             # Obtém todas as ordens abertas na Binance
@@ -154,8 +153,15 @@ class TradeExecutor:
                 tp_active = take_profit_order_id in open_order_ids
                 sl_active = stop_loss_order_id in open_order_ids
 
+                # Determina o motivo do fechamento
                 if not tp_active or not sl_active:
-                    close_type = "TP" if not tp_active else "SL"  # Determina o motivo do fechamento
+                    close_type = "TP" if not tp_active else "SL"
+
+                    # Cancela a ordem restante
+                    if close_type == "TP" and sl_active:
+                        self.cancel_order(trade["symbol"], stop_loss_order_id)
+                    elif close_type == "SL" and tp_active:
+                        self.cancel_order(trade["symbol"], take_profit_order_id)
 
                     # Atualiza o banco de dados
                     self.db.update_one(
@@ -163,13 +169,16 @@ class TradeExecutor:
                         {"_id": open_order_id},
                         {
                             "activate": False,
-                            "close_type": close_type
+                            "close_type": close_type,
+                            "stop_loss_order_id": None,
+                            "take_profit_order_id": None,
                         }
                     )
                     print(f"Trade {open_order_id} atualizado: fechado por {close_type}.")
 
         except Exception as e:
             print(f"Erro ao verificar e fechar ordens TP/SL: {e}")
+
             
     # ------------------
     # CÁLCULOS
@@ -284,21 +293,36 @@ class TradeExecutor:
             print(f"Erro ao definir Take Profit: {e}")
             return None
 
-    def adjust_to_break_even(self, symbol, entry_price, position_side, quantity):
+    
+    def activate_break_even(self, trade):
         """
-        Ajusta o Stop Loss para o ponto de break-even.
-        :param symbol: Ativo (ex: 'ADAUSDT').
-        :param entry_price: Preço de entrada da posição.
-        :param position_side: 'LONG' ou 'SHORT'.
-        :param quantity: Quantidade em posição.
+        Ativa o Break Even para um trade.
+        :param trade: Dicionário com informações do trade.
         """
         try:
-            # Para break-even, o SL é ajustado para o preço de entrada
-            self.set_stop_loss(symbol, quantity, position_side, entry_price)
-            print(f"Stop Loss ajustado para Break-Even: {entry_price}")
-        except Exception as e:
-            print(f"Erro ao ajustar Stop Loss para Break-Even: {e}")
+            symbol = trade["symbol"]
+            position_side = trade["positionSide"]
+            quantity = trade["quantity"]
+            entry_price = trade["entry_price"]
 
+            # Remove a ordem de Stop Loss atual, se existir
+            stop_loss_order_id = trade.get("stop_loss_order_id")
+            if stop_loss_order_id:
+                self.cancel_order(symbol, stop_loss_order_id)
+
+            # Define um novo Stop Loss no ponto de entrada
+            sl_order = self.set_stop_loss(symbol, quantity, position_side, entry_price)
+            if sl_order:
+                # Atualiza o banco de dados com o novo Stop Loss
+                self.update_trade_status(
+                    open_order_id=trade["_id"],
+                    stop_loss_order_id=sl_order["orderId"],
+                    break_even=True
+                )
+                print(f"Break Even ativado para o trade {trade['_id']}.")
+        except Exception as e:
+            print(f"Erro ao ativar Break Even para o trade {trade['_id']}: {e}")
+        
     # ------------------
     # MÉTODOS AUXILIARES
     # ------------------
@@ -334,3 +358,26 @@ class TradeExecutor:
         except Exception as e:
             print(f"Erro ao obter alavancagem para {symbol}: {e}")
             return None
+        
+        
+    def get_entry_price(self, order_id):
+        try:
+            order = self.client.futures_account_trades(orderId = order_id)
+            if order:
+                return order['price']
+        except Exception as e:
+            print(f"Erro ao obter entry price para {order_id}: {e}")
+            return None
+        
+    
+    def cancel_order(self, symbol, order_id):
+        """
+        Cancela uma ordem específica.
+        :param symbol: Ativo (ex: 'ADAUSDT').
+        :param order_id: ID da ordem a ser cancelada.
+        """
+        try:
+            self.client.futures_cancel_order(symbol=symbol, orderId=order_id)
+            print(f"Ordem {order_id} cancelada para o símbolo {symbol}.")
+        except BinanceAPIException as e:
+            print(f"Erro ao cancelar a ordem {order_id} para {symbol}: {e}")

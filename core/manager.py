@@ -10,6 +10,7 @@ from core.signal_manager import SignalManager
 from datetime import datetime, timedelta
 from pytz import UTC
 from binance.client import Client
+from operations.trade_executor import TradeExecutor
 import pandas as pd
 from constants.defs import (
     BINANCE_KEY,
@@ -26,6 +27,7 @@ class TraderManager:
         self.bm = None
         self.db = DataDB()
         self.signal_manager = SignalManager(total_tasks=0)
+        self.trade_executor = TradeExecutor()
         self.candle_data = {}
         self.active_streams = set()
         
@@ -273,7 +275,54 @@ class TraderManager:
         df.loc[start_time] = candle_data
         self.candle_data[symbol] = df
         
+        # Verifica trades abertos para ativar Break Even
+        self.check_break_even(symbol, candle_data)
+        
         # Notifica todas as instâncias de LongShortTrader para o símbolo quando um candle estiver completo
         for trade_id, trader in self.active_trader_instances.items():
             if trader.symbol == symbol:
                 trader.define_strategy(start_time)
+
+
+    def check_break_even(self, symbol, candle_data):
+        """
+        Verifica se o Break Even deve ser ativado para trades abertos no símbolo.
+        """
+        try:
+            # Obtém o limite de lucro para ativar o Break Even
+            config = self.db.query_single("config_system")
+            breakeven_threshold = config.get("breakeven_profit_threshold", 0)
+            if breakeven_threshold <= 0:
+                print("Nenhum limite de Break Even configurado.")
+                return
+
+            # Obtém todos os trades ativos
+            active_trades = self.db.query_all("trades", activate=True, symbol=symbol)
+
+            for trade in active_trades:
+                entry_price = self.trade_executor.get_entry_price(trade.get("open_order_id"))
+                current_price = candle_data["Close"]
+                position_side = trade.get("positionSide")
+
+                # Calcula o lucro percentual
+                profit_percent = self.calculate_profit_percent(entry_price, current_price, position_side)
+                
+                # Ativa o Break Even se o lucro atingir o limite
+                if profit_percent >= breakeven_threshold:
+                    print(f"Trade {trade['_id']} atingiu o limite de Break Even.")
+                    self.trade_executor.activate_break_even(trade)
+        except Exception as e:
+            print(f"Erro ao verificar Break Even para {symbol}: {e}")
+
+    def calculate_profit_percent(self, entry_price, current_price, position_side):
+        """
+        Calcula o lucro percentual para um trade.
+        :param entry_price: Preço de entrada.
+        :param current_price: Preço atual.
+        :param position_side: 'LONG' ou 'SHORT'.
+        :return: Lucro percentual.
+        """
+        if position_side == "LONG":
+            return (current_price - entry_price) / entry_price
+        else:
+            return (entry_price - current_price) / entry_price
