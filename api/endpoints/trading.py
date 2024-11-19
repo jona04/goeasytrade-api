@@ -71,7 +71,7 @@ async def start_trading_with_trade_id(trade_id: str):
         )
 
 
-@router.post("/stop/{trade_id}")
+@router.post("/stop/trade_id/{trade_id}")
 async def stop_trading(trade_id: str):
     response = await trader_manager.stop_trading(trade_id)
     if response["status"] == "error":

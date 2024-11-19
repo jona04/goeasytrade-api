@@ -12,10 +12,10 @@ def get_system_config():
     return config
 
 @router.post("/system-configs", summary="Atualiza ou cria as configurações gerais")
-def update_system_config(total_earnings: float, percentage_of_total: float):
+def update_system_config(total_earnings: float, percentage_of_total: float, breakeven_profit_threshold: float):
     if total_earnings < 0 or percentage_of_total < 0:
         raise HTTPException(status_code=400, detail="Os valores devem ser positivos.")
-    manager.update_system_config(total_earnings, percentage_of_total)
+    manager.update_system_config(total_earnings, percentage_of_total, breakeven_profit_threshold)
     return {
         "message": "Configurações gerais atualizadas com sucesso.",
         "total_earnings": total_earnings,
