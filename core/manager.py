@@ -276,53 +276,34 @@ class TraderManager:
         self.candle_data[symbol] = df
         
         # Verifica trades abertos para ativar Break Even
-        self.check_break_even(symbol, candle_data)
+        # self.check_break_even(symbol, candle_data)
+        
+        self.monitor_trades_for_partial_close(symbol, candle_data)
         
         # Notifica todas as instâncias de LongShortTrader para o símbolo quando um candle estiver completo
         for trade_id, trader in self.active_trader_instances.items():
             if trader.symbol == symbol:
                 trader.define_strategy(start_time)
 
-
-    def check_break_even(self, symbol, candle_data):
+    def monitor_trades_for_partial_close(self, symbol, candle_data):
         """
-        Verifica se o Break Even deve ser ativado para trades abertos no símbolo.
+        Monitora trades ativos para o símbolo fornecido e verifica
+        se o Break Even ou encerramento parcial deve ser ativado.
+        :param symbol: Ativo monitorado (ex: 'BTCUSDT').
+        :param candle_data: Dados do candle atual.
         """
         try:
-            # Obtém o limite de lucro para ativar o Break Even
-            config = self.db.query_single("config_system")
-            breakeven_threshold = config.get("breakeven_profit_threshold", 0)
-            if breakeven_threshold <= 0:
-                print("Nenhum limite de Break Even configurado.")
-                return
+            # Recupera os trades ativos que ainda não tiveram parcial ativada
+            partial_trades = self.db.query_partial_trades()
+            current_price = candle_data["Close"]
 
-            # Obtém todos os trades ativos
-            active_trades = self.db.query_all("trades", activate=True, symbol=symbol)
+            for trade in partial_trades:
+                # Filtra os trades ativos do símbolo específico
+                if trade["symbol"] == symbol:
+                    # Verifica se o Break Even deve ser ativado
+                    self.signal_manager.check_break_even_and_partial(trade["_id"], current_price)
 
-            for trade in active_trades:
-                entry_price = self.trade_executor.get_entry_price(trade.get("open_order_id"))
-                current_price = candle_data["Close"]
-                position_side = trade.get("positionSide")
-
-                # Calcula o lucro percentual
-                profit_percent = self.calculate_profit_percent(entry_price, current_price, position_side)
-                
-                # Ativa o Break Even se o lucro atingir o limite
-                if profit_percent >= breakeven_threshold:
-                    print(f"Trade {trade['_id']} atingiu o limite de Break Even.")
-                    self.trade_executor.activate_break_even(trade)
+                    # Monitora o TP e SL para a posição restante
+                    self.trade_executor.monitor_tp_sl_for_remaining_position(trade["_id"])
         except Exception as e:
-            print(f"Erro ao verificar Break Even para {symbol}: {e}")
-
-    def calculate_profit_percent(self, entry_price, current_price, position_side):
-        """
-        Calcula o lucro percentual para um trade.
-        :param entry_price: Preço de entrada.
-        :param current_price: Preço atual.
-        :param position_side: 'LONG' ou 'SHORT'.
-        :return: Lucro percentual.
-        """
-        if position_side == "LONG":
-            return (current_price - entry_price) / entry_price
-        else:
-            return (entry_price - current_price) / entry_price
+            print(f"Erro ao monitorar trades para fechamento parcial: {e}")

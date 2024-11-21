@@ -138,3 +138,32 @@ class SignalManager:
         Retorna os sinais atuais sem limpá-los.
         """
         return dict(self.signals)
+    
+    def check_break_even_and_partial(self, open_order_id, current_price):
+        """
+        Verifica se o lucro percentual atingiu o limiar para ativar o Break Even
+        e, se necessário, realiza o encerramento parcial.
+        :param open_order_id: ID único do trade ativo.
+        :param current_price: Preço atual do mercado.
+        """
+        try:
+            # Recupera os parâmetros do trade
+            trade = self.db.query_single("trades", _id=open_order_id)
+            if not trade:
+                print(f"Trade {open_order_id} não encontrado.")
+                return
+
+            entry_price = trade["entry_price"]
+            position_side = trade["positionSide"]
+            breakeven_threshold = self.db.query_single("config_system").get("breakeven_profit_threshold", 0)
+
+            # Calcula o lucro percentual
+            profit_percent = self.trade_executor.calculate_profit_percent(entry_price, current_price, position_side)
+
+            # Verifica se o lucro ultrapassou o limiar
+            if profit_percent >= breakeven_threshold and not trade.get("partial_close_triggered", False):
+                print(f"Ativando parcial para trade {open_order_id}.")
+                self.trade_executor.close_partial_position(open_order_id, 50)
+                self.trade_executor.adjust_stop_loss(open_order_id, entry_price)
+        except Exception as e:
+            print(f"Erro ao verificar Break Even para trade {open_order_id}: {e}")

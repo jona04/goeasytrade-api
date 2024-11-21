@@ -92,3 +92,51 @@ class DataDB:
             )
         except errors.InvalidOperation as error:
             print("update_many error:", error)
+
+
+    def update_partial_close(self, open_order_id, closed_percentage, remaining_quantity, break_even_price):
+        """
+        Atualiza os detalhes de um trade após o fechamento parcial.
+        :param open_order_id: ID único do trade ativo.
+        :param closed_percentage: Percentual da posição já encerrada.
+        :param remaining_quantity: Quantidade restante após a parcial.
+        :param break_even_price: Novo preço ajustado para Break Even.
+        """
+        try:
+            self.update_one(
+                "trades",
+                {"_id": open_order_id},
+                {
+                    "closed_percentage": closed_percentage,
+                    "remaining_quantity": remaining_quantity,
+                    "break_even_price": break_even_price,
+                    "partial_close_triggered": True
+                }
+            )
+            print(f"Trade {open_order_id} atualizado após parcial.")
+        except Exception as e:
+            print(f"Erro ao atualizar trade {open_order_id} após parcial: {e}")
+
+    def query_partial_trades(self):
+        """
+        Retorna os trades ativos que ainda não tiveram fechamento parcial.
+        """
+        try:
+            return self.query_all("trades", activate=True, partial_close_triggered=False)
+        except Exception as e:
+            print(f"Erro ao consultar trades para fechamento parcial: {e}")
+            return []
+
+    def update_trade_status(self, open_order_id=None, **kwargs):
+        """
+        Atualiza ou cria o status de um trade na coleção central `trades`.
+        :param open_order_id: ID da ordem de abertura (usado como chave principal).
+        :param kwargs: Outros campos a atualizar (take_profit, stop_loss, etc.).
+        """
+        try:
+            filter_criteria = {"_id": open_order_id}
+            update_data = {"$set": kwargs}
+            self.update_one("trades", filter_criteria, update_data, upsert=True)
+            print(f"Trade {open_order_id} atualizado com sucesso.")
+        except Exception as e:
+            print(f"Erro ao atualizar trade {open_order_id}: {e}")
