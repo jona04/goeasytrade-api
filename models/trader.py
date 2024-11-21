@@ -9,6 +9,7 @@ from constants.defs import (CHAT_TELEGRAM_ID)
 import asyncio
 import mplfinance as mpf
 import matplotlib.pyplot as plt
+import os
 
 class LongShortTrader:
     def __init__(
@@ -74,7 +75,10 @@ class LongShortTrader:
         # Verifica sinais ao final do candle completo
         if candle_prepared_data.SIGNAL_UP_FIRST != 0 or candle_prepared_data.SIGNAL_DOWN_FIRST != 0:
             # Gera o gráfico de candlestick e salva como imagem
-            img_path = "candle_chart.png"
+            temp_images_dir = os.path.join(os.getcwd(), "temp_images")
+            os.makedirs(temp_images_dir, exist_ok=True)
+            img_path = os.path.join(temp_images_dir, "candle_chart.png")
+            
             fig, ax = plt.subplots(figsize=(10, 6))
             mpf.plot(self.prepared_data.set_index("Time").tail(100), type="candle", ax=ax)
             plt.savefig(img_path)
