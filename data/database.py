@@ -117,15 +117,7 @@ class DataDB:
         except Exception as e:
             print(f"Erro ao atualizar trade {open_order_id} após parcial: {e}")
 
-    def query_partial_trades(self):
-        """
-        Retorna os trades ativos que ainda não tiveram fechamento parcial.
-        """
-        try:
-            return self.query_all("trades", activate=True, partial_close_triggered=False)
-        except Exception as e:
-            print(f"Erro ao consultar trades para fechamento parcial: {e}")
-            return []
+    
 
     def update_trade_status(self, open_order_id=None, **kwargs):
         """

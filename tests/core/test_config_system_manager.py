@@ -8,15 +8,16 @@ def manager():
 
 @patch("data.database.DataDB.update_one")
 def test_update_system_config(mock_update_one, manager):
-    manager.update_system_config(1000.0, 50.0, 5.0)
+    manager.update_system_config(1000.0, 50.0, 5.0, False)
     mock_update_one.assert_called_once_with(
         "config_system",
         {},
-        {"$set": {
+        {
             "total_earnings": 1000.0,
             "percentage_of_total": 50.0,
             "breakeven_profit_threshold": 5.0,
-        }},
+            "use_top_signals": False
+        },
         upsert=True
     )
 
@@ -26,10 +27,12 @@ def test_get_system_config(mock_query_single, manager):
         "total_earnings": 1000.0,
         "percentage_of_total": 50.0,
         "breakeven_profit_threshold": 5.0,
+        "use_top_signals": False
     }
     config = manager.get_system_config()
     assert config["total_earnings"] == 1000.0
     assert config["percentage_of_total"] == 50.0
+    assert config["use_top_signals"] == False
     mock_query_single.assert_called_once_with("config_system")
 
 @patch("data.database.DataDB.delete_many")

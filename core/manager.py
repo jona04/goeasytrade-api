@@ -128,6 +128,17 @@ class TraderManager:
                     self
                 )
                 self.active_trader_instances[trade_id] = trader
+                
+                # Cria ou recupera o DataFrame centralizado para o símbolo
+                if symbol not in self.candle_data:
+                    self.candle_data[symbol] = self.get_historical_data(symbol, bar_length)
+                    
+                # Inicia o stream de dados em segundo plano, se ainda não estiver ativo para o símbolo
+                if symbol not in self.active_streams:
+                    self.active_streams.add(symbol)  # Marcar o stream como ativo
+                    task = asyncio.create_task(stream_data(symbol, trade_id, self.bm, self))
+                    self.background_tasks.append(task)
+                    
                 return {"status": "success", "message": f"Trading restarted for {symbol}"}
 
             
@@ -275,10 +286,7 @@ class TraderManager:
         df.loc[start_time] = candle_data
         self.candle_data[symbol] = df
         
-        # Verifica trades abertos para ativar Break Even
-        # self.check_break_even(symbol, candle_data)
-        
-        self.monitor_trades_for_partial_close(symbol, candle_data)
+        self.monitor_trades_for_partial_close(symbol, self.candle_data[symbol].iloc[-1])
         
         # Notifica todas as instâncias de LongShortTrader para o símbolo quando um candle estiver completo
         for trade_id, trader in self.active_trader_instances.items():
@@ -294,9 +302,13 @@ class TraderManager:
         """
         try:
             # Recupera os trades ativos que ainda não tiveram parcial ativada
-            partial_trades = self.db.query_partial_trades()
+            partial_trades = self.trade_executor.query_partial_trades()
             current_price = candle_data["Close"]
 
+            if not partial_trades:
+                print("Nenhum trade parcial encontrado para monitorar.")
+                return
+            
             for trade in partial_trades:
                 # Filtra os trades ativos do símbolo específico
                 if trade["symbol"] == symbol:
@@ -307,3 +319,4 @@ class TraderManager:
                     self.trade_executor.monitor_tp_sl_for_remaining_position(trade["_id"])
         except Exception as e:
             print(f"Erro ao monitorar trades para fechamento parcial: {e}")
+

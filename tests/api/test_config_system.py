@@ -11,20 +11,32 @@ def test_get_system_config_not_found():
 def test_update_system_config():
     response = client.post(
         "/api/system-configs",
-        params={"total_earnings": 500.0, "percentage_of_total": 10.0, "breakeven_profit_threshold": 0.005},  # Envia como query params
+        params={
+            "total_earnings": 500.0, 
+            "percentage_of_total": 10.0, 
+            "breakeven_profit_threshold": 0.005,
+            "use_top_signals": False
+            },  # Envia como query params
     )
     assert response.status_code == 200
     assert response.json() == {
         "message": "Configurações gerais atualizadas com sucesso.",
         "total_earnings": 500.0,
         "percentage_of_total": 10.0,
+        "breakeven_profit_threshold": 0.005,
+        "use_top_signals": False,
     }
 
 
 def test_update_system_config_invalid_values():
     response = client.post(
         "/api/system-configs",
-        params={"total_earnings": -1.0, "percentage_of_total": 5.0, "breakeven_profit_threshold": 0.005},  # Envia como query params
+        params={
+            "total_earnings": -1.0, 
+            "percentage_of_total": 5.0, 
+            "breakeven_profit_threshold": 0.005,
+            "use_top_signals": False
+            },  # Envia como query params
     )
     assert response.status_code == 400
     assert response.json() == {"detail": "Os valores devem ser positivos."}
@@ -33,7 +45,12 @@ def test_update_system_config_invalid_values():
 def test_remove_system_config():
     client.post(
         "/api/system-configs",
-        params={"total_earnings": 500.0, "percentage_of_total": 10.0, "breakeven_profit_threshold": 0.005},
+        params={
+            "total_earnings": 500.0, 
+            "percentage_of_total": 10.0, 
+            "breakeven_profit_threshold": 0.005,
+            "use_top_signals": False
+            },
     )
     response = client.delete("/api/system-configs")
     assert response.status_code == 200

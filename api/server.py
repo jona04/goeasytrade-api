@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from api.endpoints.trading import router as trading_router
 from api.endpoints.config_assets import router as config_assets_router
 from api.endpoints.config_system import router as config_system_router
+from api.endpoints.operations import router as operations_router
 
 
 app = APIRouter()
@@ -10,3 +11,4 @@ app = APIRouter()
 app.include_router(trading_router, prefix="/trading", tags=["Trading"])
 app.include_router(config_assets_router, prefix="/api", tags=["Assets Configs"])
 app.include_router(config_system_router, prefix="/api", tags=["System Configs"])
+app.include_router(operations_router, prefix="/operations", tags=["Operations"])

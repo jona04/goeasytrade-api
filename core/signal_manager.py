@@ -71,7 +71,7 @@ class SignalManager:
         priority_data = self.db.query_all("priority_criteria")
         return pd.DataFrame(priority_data)
 
-    def select_top_signals(self, signals: dict, top_n=10):
+    def select_top_signals(self, signals: dict, top_n=5):
         """
         Seleciona os 10 melhores sinais com base nos critérios do banco de dados.
         Se houver menos de 10 sinais, retorna todos.
@@ -117,15 +117,29 @@ class SignalManager:
         """Processa sinais coletados e decide qual operação abrir, se houver."""
         signals = self.get_signals()
         print(signals)
-        
-        # Seleciona os 10 melhores sinais com base nos critérios do banco de dados
-        top_signals = self.select_top_signals(signals, top_n=10)
+
+        # Consulta a configuração para decidir se deve usar os melhores sinais
+        use_top_signals = self.db.query_single("config_system").get("use_top_signals", False)
+        top_signals = None
+
+        if use_top_signals:
+            # Seleciona os melhores sinais com base nos critérios do banco de dados
+            top_signals = self.select_top_signals(signals, top_n=10)
+        else:
+            # Caso `use_top_signals` seja False, processa todos os sinais
+            # Converte o dicionário em uma lista de tuplas (trade_params, signal)
+            top_signals = [
+                (self.get_trade_params(trade_id), signal)
+                for trade_id, signal_list in signals.items()
+                for signal in signal_list
+            ]
 
         # A lógica de decisão com os sinais selecionados
         if top_signals:
             for trade_params, signal in top_signals:
                 print(f"Abrindo operação para o sinal: {signal}")
                 self.trade_executor.execute_trade(trade_params, signal)
+
 
     def get_signals(self):
         """Retorna todos os sinais registrados e limpa o registro para o próximo candle."""

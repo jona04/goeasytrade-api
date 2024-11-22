@@ -59,17 +59,19 @@ class TradeExecutor:
             # Verifica detalhes da ordem aberta
             opened_order = self.client.futures_account_trades(symbol = symbol, orderId=order['orderId'])
             if not opened_order or not isinstance(opened_order, list) or len(opened_order) == 0:
-                print("Erro com ordem aberta. Não foi possivel adicionar SL e TP.")
+                print("Erro com ordem aberta.")
                 return None
+            entry_price = float(opened_order[0]['price'])
             
             # Calcula SL e TP
-            sl_price = self.calculate_stop_loss(opened_order, trade_params, position_side)
-            tp_price = self.calculate_take_profit(opened_order, trade_params, position_side)
+            sl_price = self.calculate_stop_loss(entry_price, trade_params, position_side)
+            tp_price = self.calculate_take_profit(entry_price, trade_params, position_side)
             
             # Salva os detalhes iniciais do trade (criação ou atualização)
             self.db.update_trade_status(
                 open_order_id=order["orderId"],
                 trade_id=trade_params["trade_id"],
+                entry_price=entry_price,
                 symbol=symbol,
                 positionSide=position_side,
                 quantity=quantity,
@@ -105,6 +107,26 @@ class TradeExecutor:
         except Exception as e:
             print(f"Erro ao executar trade: {e}")
             return None
+    
+    def get_trades(self, activate=None, partial_close_triggered=None):
+        """
+        Retorna trades com base nos parâmetros fornecidos.
+        :param activate: Se True, retorna apenas trades ativos; se False, retorna inativos.
+        :param partial_close_triggered: Se True, retorna apenas trades com parcial ativado; se False, retorna sem parcial.
+        :return: Lista de trades que atendem aos critérios.
+        """
+        try:
+            query = {}
+            if activate is not None:
+                query["activate"] = activate
+            if partial_close_triggered is not None:
+                query["partial_close_triggered"] = partial_close_triggered
+
+            trades = list(self.db.query_all("trades", **query))
+            return trades
+        except Exception as e:
+            print(f"Erro ao buscar trades: {e}")
+            return []
         
     def open_trade(self, symbol, side, quantity, position_side):
         """
@@ -184,35 +206,33 @@ class TradeExecutor:
     # CÁLCULOS
     # ------------------
 
-    def calculate_take_profit(self, opened_order, trade_params, position_side):
+    def calculate_take_profit(self, entry_price, trade_params, position_side):
         """
         Calcula o preço de Take Profit.
         :param entry_price: Preço de entrada.
         :param position_side: 'LONG' ou 'SHORT'.
         :param multiplier: Fator de multiplicação para calcular TP.
         """
-        price = float(opened_order[0]['price'])
         sl_percent = abs(float(trade_params['sl_percent']))
         
         if position_side == "LONG":
-            return round( price + (price * sl_percent),5)
+            return round( entry_price + (entry_price * sl_percent),5)
         else:
-            return round( price - (price * sl_percent),5)
+            return round( entry_price - (entry_price * sl_percent),5)
 
-    def calculate_stop_loss(self, opened_order, trade_params, position_side):
+    def calculate_stop_loss(self, entry_price, trade_params, position_side):
         """
         Calcula o preço de Stop Loss.
         :param entry_price: Preço de entrada.
         :param position_side: 'LONG' ou 'SHORT'.
         :param multiplier: Fator de multiplicação para calcular SL.
         """
-        price = float(opened_order[0]['price'])
         sl_percent = abs(float(trade_params['sl_percent']))
         
         if position_side == "LONG":
-            return round( price - (price * sl_percent),5)
+            return round( entry_price - (entry_price * sl_percent),5)
         else:
-            return round( price + (price * sl_percent),5)
+            return round( entry_price + (entry_price * sl_percent),5)
         
 
     # ------------------
@@ -400,6 +420,9 @@ class TradeExecutor:
                 positionSide=position_side
             )
 
+            # Salva a ordem no banco
+            self.log_order(order)
+            
             # Atualiza o banco de dados com os detalhes do encerramento parcial
             remaining_quantity = total_quantity - partial_quantity
             self.db.update_partial_close(
@@ -528,3 +551,13 @@ class TradeExecutor:
             return (current_price - entry_price) / entry_price
         else:
             return (entry_price - current_price) / entry_price
+        
+    def query_partial_trades(self):
+        """
+        Retorna os trades ativos que ainda não tiveram fechamento parcial.
+        """
+        try:
+            return self.db.query_all("trades", activate=True, partial_close_triggered=False)
+        except Exception as e:
+            print(f"Erro ao consultar trades para fechamento parcial: {e}")
+            return []

@@ -9,8 +9,8 @@ def trade_executor():
     return TradeExecutor()
 
 
-@patch("operations.trade_executor.TradeExecutor.calculate_stop_loss", return_value=99.5)
-@patch("operations.trade_executor.TradeExecutor.calculate_take_profit", return_value=105.0)
+@patch("operations.trade_executor.TradeExecutor.calculate_stop_loss", return_value=98.0)
+@patch("operations.trade_executor.TradeExecutor.calculate_take_profit", return_value=102.0)
 @patch("operations.trade_executor.TradeExecutor.get_quantity", return_value=1)
 @patch("operations.trade_executor.TradeExecutor.get_leverage", return_value=10)
 @patch("operations.trade_executor.TradeExecutor.open_trade", return_value={"orderId": "123"})
@@ -42,14 +42,14 @@ def test_execute_trade(
     mock_open_trade.assert_called_once_with(symbol="BTCUSDT", side="BUY", quantity=1, position_side="LONG")
 
     # Verificar que `calculate_stop_loss` e `calculate_take_profit` foram chamados
-    mock_calculate_sl.assert_called_once_with([{"price": "100"}], trade_params, "LONG")
-    mock_calculate_tp.assert_called_once_with([{"price": "100"}], trade_params, "LONG")
+    mock_calculate_sl.assert_called_once_with(100, trade_params, "LONG")
+    mock_calculate_tp.assert_called_once_with(100, trade_params, "LONG")
 
     # Verificar que `set_stop_loss` foi chamado
-    mock_set_sl.assert_called_once_with("BTCUSDT", 1, "LONG", 99.5)
+    mock_set_sl.assert_called_once_with("BTCUSDT", 1, "LONG", 98.0)
 
     # Verificar que `set_take_profit` foi chamado
-    mock_set_tp.assert_called_once_with("BTCUSDT", 1, "LONG", 105.0)
+    mock_set_tp.assert_called_once_with("BTCUSDT", 1, "LONG", 102.0)
 
     # Verificar que `update_trade_status` foi chamado com os valores esperados
     trade_executor.db.update_trade_status.assert_any_call(
@@ -233,21 +233,21 @@ def test_cancel_order(mock_cancel_order, trade_executor):
 # Teste para o método `calculate_take_profit`
 def test_calculate_take_profit(trade_executor):
     # Cenário 1: Posição LONG
-    opened_order_long = [{"price": "100"}]
+    entry_price = 100
     trade_params_long = {"sl_percent": 0.05}
     position_side_long = "LONG"
 
-    tp_price_long = trade_executor.calculate_take_profit(opened_order_long, trade_params_long, position_side_long)
+    tp_price_long = trade_executor.calculate_take_profit(entry_price, trade_params_long, position_side_long)
 
     # Verifica que o preço de Take Profit foi calculado corretamente para LONG
     assert tp_price_long == 105.0  # 100 + (100 * 0.05)
 
     # Cenário 2: Posição SHORT
-    opened_order_short = [{"price": "100"}]
+    entry_price = 100
     trade_params_short = {"sl_percent": 0.05}
     position_side_short = "SHORT"
 
-    tp_price_short = trade_executor.calculate_take_profit(opened_order_short, trade_params_short, position_side_short)
+    tp_price_short = trade_executor.calculate_take_profit(entry_price, trade_params_short, position_side_short)
 
     # Verifica que o preço de Take Profit foi calculado corretamente para SHORT
     assert tp_price_short == 95.0  # 100 - (100 * 0.05)
@@ -256,21 +256,21 @@ def test_calculate_take_profit(trade_executor):
 # Teste para o método `calculate_stop_loss`
 def test_calculate_stop_loss(trade_executor):
     # Cenário 1: Posição LONG
-    opened_order_long = [{"price": "100"}]
+    entry_price = 100
     trade_params_long = {"sl_percent": 0.05}
     position_side_long = "LONG"
 
-    sl_price_long = trade_executor.calculate_stop_loss(opened_order_long, trade_params_long, position_side_long)
+    sl_price_long = trade_executor.calculate_stop_loss(entry_price, trade_params_long, position_side_long)
 
     # Verifica que o preço de Stop Loss foi calculado corretamente para LONG
     assert sl_price_long == 95.0  # 100 - (100 * 0.05)
 
     # Cenário 2: Posição SHORT
-    opened_order_short = [{"price": "100"}]
+    entry_price = 100
     trade_params_short = {"sl_percent": 0.05}
     position_side_short = "SHORT"
 
-    sl_price_short = trade_executor.calculate_stop_loss(opened_order_short, trade_params_short, position_side_short)
+    sl_price_short = trade_executor.calculate_stop_loss(entry_price, trade_params_short, position_side_short)
 
     # Verifica que o preço de Stop Loss foi calculado corretamente para SHORT
     assert sl_price_short == 105.0  # 100 + (100 * 0.05)
