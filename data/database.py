@@ -79,7 +79,15 @@ class DataDB:
         :param upsert: Se True, cria o documento caso ele não exista.
         """
         try:
-            result = self.db[collection].update_one(filter_criteria, {"$set": update_values}, upsert=upsert)
+            # Verifica se $set já está no update_values e ajusta se necessário
+            if "$set" in update_values:
+                update_values = update_values["$set"]
+            
+            result = self.db[collection].update_one(
+                filter_criteria,
+                {"$set": update_values},  # Encapsula corretamente
+                upsert=upsert
+            )
             return result
         except Exception as error:
             print("Erro no update_one:", error)
@@ -92,43 +100,3 @@ class DataDB:
             )
         except errors.InvalidOperation as error:
             print("update_many error:", error)
-
-
-    def update_partial_close(self, open_order_id, closed_percentage, remaining_quantity, break_even_price):
-        """
-        Atualiza os detalhes de um trade após o fechamento parcial.
-        :param open_order_id: ID único do trade ativo.
-        :param closed_percentage: Percentual da posição já encerrada.
-        :param remaining_quantity: Quantidade restante após a parcial.
-        :param break_even_price: Novo preço ajustado para Break Even.
-        """
-        try:
-            self.update_one(
-                "trades",
-                {"_id": open_order_id},
-                {
-                    "closed_percentage": closed_percentage,
-                    "remaining_quantity": remaining_quantity,
-                    "break_even_price": break_even_price,
-                    "partial_close_triggered": True
-                }
-            )
-            print(f"Trade {open_order_id} atualizado após parcial.")
-        except Exception as e:
-            print(f"Erro ao atualizar trade {open_order_id} após parcial: {e}")
-
-    
-
-    def update_trade_status(self, open_order_id=None, **kwargs):
-        """
-        Atualiza ou cria o status de um trade na coleção central `trades`.
-        :param open_order_id: ID da ordem de abertura (usado como chave principal).
-        :param kwargs: Outros campos a atualizar (take_profit, stop_loss, etc.).
-        """
-        try:
-            filter_criteria = {"_id": open_order_id}
-            update_data = {"$set": kwargs}
-            self.update_one("trades", filter_criteria, update_data, upsert=True)
-            print(f"Trade {open_order_id} atualizado com sucesso.")
-        except Exception as e:
-            print(f"Erro ao atualizar trade {open_order_id}: {e}")

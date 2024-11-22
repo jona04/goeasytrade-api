@@ -104,7 +104,7 @@ def test_select_top_signals_respects_priority_table(mock_get_priority_table, sig
         {"emaper_s": 5, "emaper_l": 100, "emaper_force": 2, "sl_percent": -0.04},
     ])
 
-    # Simula sinais associados a trades
+    # Simula sinais associados a opened_trades
     signals = {
         "trade1": [{"SIGNAL_UP": 1}],  # Prioridade 1
         "trade2": [{"SIGNAL_UP": 2}],  # Prioridade 2
@@ -246,7 +246,7 @@ def test_check_break_even_and_partial_partial_close_triggered(
         {
             "_id": "123",
             "entry_price": 100,
-            "positionSide": "LONG",
+            "position_side": "LONG",
             "partial_close_triggered": False,
         },
         {"breakeven_profit_threshold": 0.03},  # Config do sistema
@@ -285,7 +285,7 @@ def test_check_break_even_and_partial_already_triggered(
         {
             "_id": "123",
             "entry_price": 100,
-            "positionSide": "LONG",
+            "position_side": "LONG",
             "partial_close_triggered": True,
         },
         {"breakeven_profit_threshold": 0.03},  # Config do sistema
@@ -324,7 +324,7 @@ def test_check_break_even_and_partial_below_threshold(
         {
             "_id": "123",
             "entry_price": 100,
-            "positionSide": "LONG",
+            "position_side": "LONG",
             "partial_close_triggered": False,
         },
         {"breakeven_profit_threshold": 0.03},  # Config do sistema
