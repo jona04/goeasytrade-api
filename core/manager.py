@@ -128,6 +128,7 @@ class TraderManager:
                     self
                 )
                 self.active_trader_instances[trade_id] = trader
+                self.signal_manager.total_tasks += 1
                 
                 # Cria ou recupera o DataFrame centralizado para o símbolo
                 if symbol not in self.candle_data:
@@ -306,12 +307,13 @@ class TraderManager:
             current_price = candle_data["Close"]
 
             if not partial_trades:
-                print("Nenhum trade parcial encontrado para monitorar.")
+                # print("Nenhum trade parcial encontrado para monitorar.")
                 return
             
             for trade in partial_trades:
                 # Filtra os trades ativos do símbolo específico
                 if trade["symbol"] == symbol:
+                    print(f"Verificando parcial para {trade["_id"]} - {symbol}")
                     # Verifica se o Break Even deve ser ativado
                     self.signal_manager.check_break_even_and_partial(trade["_id"], current_price)
 

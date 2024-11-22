@@ -116,7 +116,7 @@ class SignalManager:
     def process_signals(self):
         """Processa sinais coletados e decide qual operação abrir, se houver."""
         signals = self.get_signals()
-        print(signals)
+        print("verifica sinais", signals)
 
         # Consulta a configuração para decidir se deve usar os melhores sinais
         use_top_signals = self.db.query_single("config_system").get("use_top_signals", False)
