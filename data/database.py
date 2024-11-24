@@ -25,7 +25,7 @@ class DataDB:
 
     def query_all_list(self, collection, limit=100, **kargs):
         try:
-            cursor = self.db[collection].find(kargs, {"_id": 0}).limit(limit)
+            cursor = self.db[collection].find(kargs).limit(limit)
 
             result = defaultdict(list)
             for item in cursor:
@@ -39,7 +39,7 @@ class DataDB:
     def query_all(self, collection, limit=100, **kargs):
         try:
             data = []
-            r = self.db[collection].find(kargs, {"_id": 0}).limit(limit)
+            r = self.db[collection].find(kargs).limit(limit)
             for item in r:
                 data.append(item)
             return data
@@ -48,7 +48,7 @@ class DataDB:
 
     def query_single(self, collection, **kargs):
         try:
-            return self.db[collection].find_one(kargs, {"_id": 0})
+            return self.db[collection].find_one(kargs)
         except errors.InvalidOperation as error:
             print("query_single error", error)
 

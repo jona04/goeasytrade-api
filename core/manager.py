@@ -278,23 +278,24 @@ class TraderManager:
         :param candle_data: Dados do candle atual.
         """
         try:
-            # Recupera os opened_trades ativos que ainda não tiveram parcial ativada
-            partial_opened_trades = self.trade_executor.get_opened_trades(activate=True, partial_close_triggered=False)
+            # Recupera todos os opened_trades ativos
+            all_active_trades = self.trade_executor.get_opened_trades(activate=True)
             current_price = candle_data["Close"]
             
-            if not partial_opened_trades:
+            if not all_active_trades:
                 return
             
-            for opened_trade in partial_opened_trades:
+            for opened_trade in all_active_trades:
                 # Filtra os opened_trades ativos do símbolo específico
                 if opened_trade["symbol"] == symbol:
-                    print(f"Verificando parcial para {opened_trade["_id"]} - {symbol}")
-                    
-                    # Verifica se o Break Even deve ser ativado
-                    self.trade_executor.check_break_even_and_partial(opened_trade, current_price)
+                    # Se o trade ainda não teve parcial ativada, verifica Break Even
+                    if not opened_trade["break_even"]:
+                        print(f"Verificando Break Even e parcial para trade aberto {opened_trade['_id']} - {symbol}")
+                        self.trade_executor.check_break_even_and_partial(opened_trade, current_price)
 
-                    # Monitora o TP e SL para a posição restante
-                    self.trade_executor.monitor_tp_sl_for_remaining_position(opened_trade)
+                    # Monitora TP e SL para todos os trades ativos
+                    print(f"Monitorando TP/SL para trade aberto {opened_trade['_id']} - {symbol}")
+                    self.trade_executor.monitor_tp_sl_for_remaining_position(opened_trade, current_price)
         except Exception as e:
             print(f"Erro ao monitorar opened_trades para fechamento parcial: {e}")
 
@@ -326,3 +327,26 @@ class TraderManager:
         """Retorna a lista de traders ativos."""
         active_traders = self.db.query_all("active_traders", active=True)
         return {"active_traders": active_traders}
+
+    def get_available_balance(self):
+        """
+        Obtém o saldo disponível em USDT na conta de Futuros.
+
+        :param client: Instância autenticada do cliente da Binance API.
+        :return: Saldo disponível em USDT.
+        """
+        try:
+            # Consulta informações da conta de Futuros
+            account_info = self.client.futures_account()
+            
+            # Filtra o ativo USDT e retorna o saldo disponível
+            usdt_balance = next((asset for asset in account_info['assets'] if asset['asset'] == 'USDT'), None)
+            
+            if not usdt_balance:
+                raise ValueError("USDT não encontrado na conta de Futuros.")
+
+            available_balance = float(usdt_balance['availableBalance'])
+            return available_balance
+        except Exception as e:
+            print(f"Erro ao obter o saldo disponível: {e}")
+            return None

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query
 from typing import Optional
 from operations.trade_executor import TradeExecutor
+from core.manager import TraderManager
 from pydantic import BaseModel, Field
 from typing import Any, Dict
 from fastapi import APIRouter, HTTPException
@@ -10,9 +11,11 @@ from models.close_partial_request import ClosePartialRequest
 from models.adjust_stop_loss_request import AdjustStopLossRequest
 from models.monitor_tp_sl_request import MonitorTpSlRequest
 from models.close_remaining_request import CloseRemainingRequest
+from models.monitor_partial_close_request import MonitorPartialCloseRequest
 
 router = APIRouter()
 trade_executor = TradeExecutor()
+trade_manager = TraderManager()
 
 class TradeUpdate(BaseModel):
     updates: Dict[str, Any] = Field(
@@ -25,10 +28,46 @@ class TradeUpdate(BaseModel):
         }
     )
 
+class ExecuteTradeRequest(BaseModel):
+    trade_params: Dict[str, Any] = Field(
+        ...,
+        description="Parâmetros para configurar o trade. Exemplos de atributos: "
+                    "{'symbol': 'BTCUSDT', 'sl_percent': 0.01, 'trade_id': 12345}"
+    )
+    signal: Dict[str, Any] = Field(
+        ...,
+        description="Dados do sinal de entrada para o trade. Exemplos de atributos: "
+                    "{'SIGNAL_UP': 1, 'Close': 27300.5}"
+    )
+
+@router.post("/execute_trade")
+def execute_trade(request: ExecuteTradeRequest):
+    """
+    Endpoint para executar um trade com base nos parâmetros fornecidos e no sinal.
+    """
+    try:
+        result = trade_executor.execute_trade(
+            trade_params=request.trade_params,
+            signal=request.signal,
+        )
+
+        if not result:
+            raise HTTPException(status_code=400, detail="Erro ao executar o trade.")
+        
+        return {
+            "status": "success",
+            "message": "Trade executado com sucesso.",
+            "order_details": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 @router.get("/opened_trades")
 def get_opened_trades(
     activate: Optional[bool] = Query(None, description="True para buscar opened_trades ativos, False para inativos."),
-    partial_close_triggered: Optional[bool] = Query(None, description="True para opened_trades com parcial ativada, False para sem parcial.")
+    break_even: Optional[bool] = Query(None, description="True para opened_trades com break even ativada, False para sem parcial.")
 ):
     """
     Retorna opened_trades com base nos parâmetros fornecidos.
@@ -36,7 +75,7 @@ def get_opened_trades(
     try:
         opened_trades = trade_executor.get_opened_trades(
             activate=activate, 
-            partial_close_triggered=partial_close_triggered
+            break_even=break_even
         )
         return {"opened_trades": opened_trades}
     except Exception as e:
@@ -77,6 +116,7 @@ def create_trade(trade: CreateTrade):
                 "symbol": trade.symbol,
                 "position_side": trade.position_side,
                 "quantity": trade.quantity,
+                "remaining_quantity": trade.quantity,
                 "stop_loss_order_id": trade.stop_loss_order_id,
                 "take_profit_order_id": trade.take_profit_order_id,
                 "activate": trade.activate,
@@ -174,7 +214,7 @@ def monitor_tp_sl_for_remaining_position(request: MonitorTpSlRequest):
     try:
         # Transforma os dados da requisição no formato esperado pelo método
         opened_trade = {
-            "_id": request._id,
+            "_id": request.id,
             "symbol": request.symbol,
             "remaining_quantity": request.remaining_quantity,
             "take_profit": request.take_profit,
@@ -187,7 +227,7 @@ def monitor_tp_sl_for_remaining_position(request: MonitorTpSlRequest):
 
         return {
             "status": "success",
-            "message": f"Monitoramento de TP/SL concluído para o trade aberto {request._id}."
+            "message": f"Monitoramento de TP/SL concluído para o trade aberto {request.id}."
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao monitorar TP/SL: {str(e)}")
@@ -200,7 +240,7 @@ def close_remaining_position(request: CloseRemainingRequest):
     try:
         # Transforma os dados da requisição no formato esperado pelo método
         opened_trade = {
-            "_id": request._id,
+            "_id": request.id,
             "symbol": request.symbol,
             "position_side": request.position_side,
             "remaining_quantity": request.remaining_quantity
@@ -214,7 +254,35 @@ def close_remaining_position(request: CloseRemainingRequest):
 
         return {
             "status": "success",
-            "message": f"Trade aberto {request._id} encerrado por {request.reason}."
+            "message": f"Trade aberto {request.id} encerrado por {request.reason}."
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao encerrar posição restante: {str(e)}")
+
+@router.post("/monitor_trades_for_partial_close")
+def monitor_trades_for_partial_close(request: MonitorPartialCloseRequest):
+    """
+    Endpoint para monitorar trades ativos para um símbolo específico e verificar
+    se o Break Even ou o encerramento parcial deve ser ativado.
+    """
+    try:
+        symbol = request.symbol
+        candle_data = request.candle_data
+
+        # Verifica se o candle_data contém o preço de fechamento ('Close')
+        if "Close" not in candle_data:
+            raise HTTPException(status_code=400, detail="O campo 'Close' é obrigatório em candle_data.")
+
+        # Chama o método para monitorar os trades
+        trade_manager.monitor_trades_for_partial_close(symbol, candle_data)
+
+        return {
+            "status": "success",
+            "message": f"Monitoramento de trades para {symbol} realizado com sucesso.",
+            "data": {
+                "symbol": symbol,
+                "candle_data": candle_data
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao monitorar trades: {str(e)}")

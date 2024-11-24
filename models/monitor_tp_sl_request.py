@@ -1,10 +1,10 @@
-from pydantic import BaseModel
-from typing import Any, Dict, Optional
+from pydantic import BaseModel, Field
+from typing import Optional
 
 class MonitorTpSlRequest(BaseModel):
-    _id: int  # ID único do trade
-    symbol: str  # Símbolo do ativo (ex: 'BTCUSDT')
-    remaining_quantity: float  # Quantidade restante do trade
-    take_profit: Optional[float] = None  # Preço do Take Profit (opcional)
-    stop_loss: Optional[float] = None  # Preço do Stop Loss (opcional)
-    activate: bool  # Status do trade (ativo ou inativo)
+    id: int = Field(..., alias="_id", description="ID único do trade.")  # Uso de alias
+    symbol: str = Field(..., description="Símbolo do ativo (ex: 'BTCUSDT').")
+    remaining_quantity: float = Field(..., description="Quantidade restante do trade.")
+    take_profit: Optional[float] = Field(None, description="Preço do Take Profit (opcional).")
+    stop_loss: Optional[float] = Field(None, description="Preço do Stop Loss (opcional).")
+    activate: bool = Field(..., description="Indica se o trade está ativo ou inativo.")

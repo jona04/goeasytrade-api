@@ -43,9 +43,11 @@ class TradeExecutor:
             self.client.futures_change_leverage(symbol = symbol, leverage = leverage)
         
             # Chama o método open_trade com os parâmetros traduzidos
+            side = "BUY" if position_side == "LONG" else "SELL"
+            print(f"Abrindo trade {symbol} | {side} | {quantity} | {position_side}")
             order = self.open_trade(
                 symbol=symbol,
-                side="BUY" if position_side == "LONG" else "SELL",
+                side = side,
                 quantity=quantity,
                 position_side=position_side
             )
@@ -56,13 +58,8 @@ class TradeExecutor:
             
             # Salva a ordem no banco
             self.log_order(order)
-            
-            # Verifica detalhes da ordem aberta
-            opened_order = self.client.futures_account_trades(symbol = symbol, orderId=order['orderId'])
-            if not opened_order or not isinstance(opened_order, list) or len(opened_order) == 0:
-                print("Erro com ordem aberta.")
-                return None
-            entry_price = float(opened_order[0]['price'])
+
+            entry_price = float(signal['Close'])
             
             # Calcula SL e TP
             sl_price = self.calculate_stop_loss(entry_price, trade_params, position_side)
@@ -77,6 +74,7 @@ class TradeExecutor:
                     "symbol": symbol,
                     "position_side": position_side,
                     "quantity": quantity,
+                    "remaining_quantity": quantity,
                     "stop_loss_order_id": None,  # Atualizado posteriormente
                     "take_profit_order_id": None,  # Atualizado posteriormente
                     "activate": True,
@@ -112,19 +110,19 @@ class TradeExecutor:
             print(f"Erro ao executar trade: {e}")
             return None
     
-    def get_opened_trades(self, activate: Optional[bool] = None, partial_close_triggered: Optional[bool] = None):
+    def get_opened_trades(self, activate: Optional[bool] = None, break_even: Optional[bool] = None):
         """
         Retorna trades abertos da coleção `opened_trades` com base nos filtros fornecidos.
         :param activate: True para trades ativos, False para inativos.
-        :param partial_close_triggered: True para trades com parcial ativada, False para sem parcial.
+        :param break_even: True para trades com parcial ativada, False para sem parcial.
         :return: Lista de trades filtrados.
         """
         try:
             query = {}
             if activate is not None:
                 query["activate"] = activate
-            if partial_close_triggered is not None:
-                query["partial_close_triggered"] = partial_close_triggered
+            if break_even is not None:
+                query["break_even"] = break_even
 
             trades = list(self.db.query_all("opened_trades", **query))
             return trades
@@ -294,6 +292,7 @@ class TradeExecutor:
         try:
             # Cria o novo SL
             side = "SELL" if position_side == "LONG" else "BUY"
+            print(f"Abrindo SL {symbol} | {side} | {sl_price} | {quantity} | {position_side}")
             sl_order = self.client.futures_create_order(
                 symbol=symbol,
                 side=side,
@@ -320,6 +319,7 @@ class TradeExecutor:
         """
         try:
             side = "SELL" if position_side == "LONG" else "BUY"
+            print(f"Abrindo TP {symbol} | {side} | {tp_price} | {quantity} | {position_side}")
             tp_order = self.client.futures_create_order(
                 symbol=symbol,
                 side=side,
@@ -336,38 +336,6 @@ class TradeExecutor:
             print(f"Erro ao definir Take Profit: {e}")
             return None
 
-    
-    def activate_break_even(self, trade):
-        """
-        Ativa o Break Even para um trade.
-        :param trade: Dicionário com informações do trade.
-        """
-        try:
-            symbol = trade["symbol"]
-            position_side = trade["position_side"]
-            quantity = trade["quantity"]
-            entry_price = trade["entry_price"]
-
-            # Remove a ordem de Stop Loss atual, se existir
-            stop_loss_order_id = trade.get("stop_loss_order_id")
-            if stop_loss_order_id:
-                self.cancel_order(symbol, stop_loss_order_id)
-
-            # Define um novo Stop Loss no ponto de entrada
-            sl_order = self.set_stop_loss(symbol, quantity, position_side, entry_price)
-            if sl_order:
-                # Atualiza o banco de dados com o novo Stop Loss
-                self.edit_trades(
-                    opened_trade_id=trade["_id"],
-                    updates={
-                        "stop_loss_order_id": sl_order["orderId"],
-                        "break_even": True
-                    }
-                )
-                print(f"Break Even ativado para o trade {trade['_id']}.")
-        except Exception as e:
-            print(f"Erro ao ativar Break Even para o trade {trade['_id']}: {e}")
-        
     # ------------------
     # MÉTODOS AUXILIARES
     # ------------------
@@ -379,9 +347,19 @@ class TradeExecutor:
         :return: Quantidade configurada para o símbolo.
         """
         try:
-            config = self.db.query_single("config_assets", symbol=symbol)
-            if config and "quantity" in config:
-                return config["quantity"]
+            config_system = self.db.query_single("config_system")
+            balance = config_system['total_earnings']
+            percentage_of_total = config_system['percentage_of_total']
+            quantity_in_dolar = balance / percentage_of_total
+            
+            price_data = self.client.get_symbol_ticker(symbol=symbol)
+            current_price = float(price_data['price'])
+        
+            quantity = round(quantity_in_dolar / current_price,0)
+            
+            # config_asset = self.db.query_single("config_assets", symbol=symbol)
+            if quantity:
+                return quantity
             else:
                 raise ValueError(f"Configuração de quantidade não encontrada para {symbol}.")
         except Exception as e:
@@ -447,10 +425,17 @@ class TradeExecutor:
             profit_percent = self.calculate_profit_percent(entry_price, current_price, position_side)
 
             # Verifica se o lucro ultrapassou o limiar
-            if profit_percent >= breakeven_threshold and not opened_trade.get("partial_close_triggered", False):
-                print(f"Ativando parcial para trade aberto {opened_trade['_id']}.")
+            if profit_percent >= breakeven_threshold and not opened_trade.get("break_even", False):
+                print(f"Ativando parcial para trade aberto {opened_trade['_id']}. Side = {position_side} | Profit = {profit_percent} | Breakeven = {breakeven_threshold}")
                 self.close_partial_position(opened_trade, 50)
                 self.adjust_stop_loss(opened_trade, entry_price)
+                
+                # Atualiza o campo break_even para True
+                self.edit_opened_trades(
+                    opened_trade_id=opened_trade["_id"],
+                    updates={"break_even": True}
+                )
+                
         except Exception as e:
             print(f"Erro ao verificar Break Even para trade {opened_trade['_id']}: {e}")
 
@@ -469,10 +454,11 @@ class TradeExecutor:
             symbol = opened_trade["symbol"]
             position_side = opened_trade["position_side"]
             total_quantity = opened_trade["quantity"]
-            partial_quantity = total_quantity * (percentage / 100)
+            partial_quantity = round(total_quantity * (percentage / 100),0)
 
             # Fecha a posição parcial
             side = "SELL" if position_side == "LONG" else "BUY"
+            print(f"Fecha parcial para trade aberto {opened_trade['_id']}. Side = {position_side} | partial_quantity = {partial_quantity}")
             order = self.client.futures_create_order(
                 symbol=symbol,
                 side=side,
@@ -481,7 +467,7 @@ class TradeExecutor:
                 positionSide=position_side
             )
 
-            # Salva a ordem no banco
+            # # Salva a ordem no banco
             self.log_order(order)
             
             # Atualiza o banco de dados com os detalhes do encerramento parcial
@@ -507,6 +493,7 @@ class TradeExecutor:
         """
         try:
             # Recupera os detalhes do trade
+            opened_trade = self.db.query_single("opened_trades", _id=opened_trade['_id'])
             if not opened_trade:
                 print(f"Trade aberto {opened_trade['_id']} não encontrado.")
                 return
@@ -526,38 +513,46 @@ class TradeExecutor:
                 # Atualiza o banco de dados com o novo SL
                 self.edit_opened_trades(
                     opened_trade_id=opened_trade['_id'],
-                    updates={"stop_loss_order_id": sl_order["orderId"]}
+                    updates={
+                        "stop_loss_order_id": sl_order["orderId"],
+                        "stop_loss": new_sl_price
+                        }
                 )
                 print(f"Novo Stop Loss ajustado para {new_sl_price} no trade {opened_trade['_id']}.")
         except Exception as e:
             print(f"Erro ao ajustar Stop Loss para trade {opened_trade['_id']}: {e}")
             
-    def monitor_tp_sl_for_remaining_position(self, opened_trade):
+    def monitor_tp_sl_for_remaining_position(self, opened_trade, current_price):
         """
         Monitora a posição restante para fechamento no TP ou no novo SL ajustado.
         :param opened_trade: Trade aberto ativo.
         """
         try:
             # Recupera os detalhes do trade
+            opened_trade = self.db.query_single("opened_trades", _id=opened_trade['_id'])
             if not opened_trade or not opened_trade.get("activate", False):
                 print(f"Trade aberto {opened_trade['_id']} não está ativo.")
                 return
 
-            symbol = opened_trade["symbol"]
-            remaining_quantity = opened_trade["remaining_quantity"]
             tp_price = opened_trade.get("take_profit")
             sl_price = opened_trade.get("stop_loss")
-
-            # Recupera o preço atual do mercado
-            current_price = float(self.client.futures_mark_price(symbol=symbol)["markPrice"])
-
-            # Verifica se o preço atingiu o TP ou o SL
-            if tp_price and current_price >= tp_price:
-                print(f"Take Profit atingido para trade {opened_trade['_id']}.")
-                self.close_remaining_position(opened_trade, reason="TP")
-            elif sl_price and current_price <= sl_price:
-                print(f"Stop Loss ajustado (Break Even) atingido para trade {opened_trade['_id']}.")
-                self.close_remaining_position(opened_trade, reason="Break Even")
+            
+            if opened_trade['position_side'] == 'LONG':
+                # Verifica se o preço atingiu o TP ou o SL
+                if tp_price and current_price >= tp_price:
+                    print(f"Take Profit LONG atingido para trade {opened_trade['_id']}. Price = {current_price} | TP = {tp_price}")
+                    self.close_remaining_position(opened_trade, reason="TP")
+                elif sl_price and current_price <= sl_price:
+                    print(f"Stop Loss LONG atingido para trade {opened_trade['_id']}. Price = {current_price} | SL = {sl_price}")
+                    self.close_remaining_position(opened_trade, reason="SL")
+            else:
+                # Verifica se o preço atingiu o TP ou o SL
+                if tp_price and current_price <= tp_price:
+                    print(f"Take Profit SHORT atingido para trade {opened_trade['_id']}. Price = {current_price} | TP = {tp_price}")
+                    self.close_remaining_position(opened_trade, reason="TP")
+                elif sl_price and current_price >= sl_price:
+                    print(f"Stop Loss SHORT atingido para trade {opened_trade['_id']}. Price = {current_price} | SL = {sl_price}")
+                    self.close_remaining_position(opened_trade, reason="SL")
         except Exception as e:
             print(f"Erro ao monitorar TP/SL para trade {opened_trade['_id']}: {e}")
 
@@ -574,10 +569,11 @@ class TradeExecutor:
 
             symbol = opened_trade["symbol"]
             position_side = opened_trade["position_side"]
-            remaining_quantity = opened_trade["remaining_quantity"]
+            remaining_quantity = opened_trade.get("remaining_quantity")
 
             # Fecha a posição restante
             side = "SELL" if position_side == "LONG" else "BUY"
+            print(f"Fechando posição da ordem {opened_trade['_id']}. Side = {side} | quantity = {remaining_quantity}")
             close_order = self.client.futures_create_order(
                 symbol=symbol,
                 side=side,
@@ -588,6 +584,14 @@ class TradeExecutor:
             
             self.log_order(close_order)
             
+            # Cancela o Stop Loss e Take profit atual, se existir
+            stop_loss_order_id = opened_trade.get("stop_loss_order_id")
+            trade_profit_order_id = opened_trade.get("trade_profit_order_id")
+            if stop_loss_order_id:
+                self.cancel_order(symbol, stop_loss_order_id)
+            if trade_profit_order_id:
+                self.cancel_order(symbol, trade_profit_order_id)
+                
             # Atualiza o banco de dados para refletir o encerramento total
             self.edit_opened_trades(
                 opened_trade_id=opened_trade['_id'],
