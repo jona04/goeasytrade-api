@@ -14,3 +14,18 @@ async def stream_data(symbol, trade_id, bm, manager):
             except Exception as e:
                 print(f"Error while streaming data for {symbol}: {e}")
                 break
+
+
+async def stream_data_pair(symbol, pair_trader_id, bm, manager):
+    """Stream de dados da Binance para o par de trading."""
+    if bm is None:
+        raise ValueError("BinanceSocketManager (bm) não foi inicializado corretamente.")
+    
+    async with bm.kline_socket(symbol=symbol, interval=manager.active_pair_traders[pair_trader_id].interval) as stream:
+        while True:
+            try:
+                msg = await stream.recv()
+                manager.process_stream_message_pair(symbol, msg)
+            except Exception as e:
+                print(f"Erro no stream para {symbol}: {e}")
+                break

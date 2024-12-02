@@ -87,23 +87,23 @@ class TradeExecutor:
                 upsert=True
             )
 
-            # Define Stop Loss e atualiza no banco
-            if sl_price:
-                sl_order = self.set_stop_loss(symbol, quantity, position_side, sl_price)
-                if sl_order:
-                    self.edit_opened_trades(
-                        opened_trade_id=order["orderId"],
-                        updates={"stop_loss_order_id": sl_order["orderId"]}
-                    )
+            # # Define Stop Loss e atualiza no banco
+            # if sl_price:
+            #     sl_order = self.set_stop_loss(symbol, quantity, position_side, sl_price)
+            #     if sl_order:
+            #         self.edit_opened_trades(
+            #             opened_trade_id=order["orderId"],
+            #             updates={"stop_loss_order_id": sl_order["orderId"]}
+            #         )
 
-            # Define Take Profit e atualiza no banco
-            if tp_price:
-                tp_order = self.set_take_profit(symbol, quantity, position_side, tp_price)
-                if tp_order:
-                    self.edit_opened_trades(
-                        opened_trade_id=order["orderId"],
-                        updates={"take_profit_order_id": tp_order["orderId"]}
-                    )
+            # # Define Take Profit e atualiza no banco
+            # if tp_price:
+            #     tp_order = self.set_take_profit(symbol, quantity, position_side, tp_price)
+            #     if tp_order:
+            #         self.edit_opened_trades(
+            #             opened_trade_id=order["orderId"],
+            #             updates={"take_profit_order_id": tp_order["orderId"]}
+            #         )
 
             return order
         except Exception as e:
@@ -428,7 +428,7 @@ class TradeExecutor:
             if profit_percent >= breakeven_threshold and not opened_trade.get("break_even", False):
                 print(f"Ativando parcial para trade aberto {opened_trade['_id']}. Side = {position_side} | Profit = {profit_percent} | Breakeven = {breakeven_threshold}")
                 self.close_partial_position(opened_trade, 50)
-                self.adjust_stop_loss(opened_trade, entry_price)
+                # self.adjust_stop_loss(opened_trade, entry_price)
                 
                 # Atualiza o campo break_even para True
                 self.edit_opened_trades(
@@ -478,6 +478,7 @@ class TradeExecutor:
                     "closed_percentage": percentage,
                     "remaining_quantity": remaining_quantity,
                     "break_even_price": opened_trade["entry_price"],
+                    "stop_loss": opened_trade["entry_price"],
                 }
             )
             print(f"Parcial de {percentage}% encerrada para trade {opened_trade['_id']}.")
@@ -584,13 +585,13 @@ class TradeExecutor:
             
             self.log_order(close_order)
             
-            # Cancela o Stop Loss e Take profit atual, se existir
-            stop_loss_order_id = opened_trade.get("stop_loss_order_id")
-            trade_profit_order_id = opened_trade.get("trade_profit_order_id")
-            if stop_loss_order_id:
-                self.cancel_order(symbol, stop_loss_order_id)
-            if trade_profit_order_id:
-                self.cancel_order(symbol, trade_profit_order_id)
+            # # Cancela o Stop Loss e Take profit atual, se existir
+            # stop_loss_order_id = opened_trade.get("stop_loss_order_id")
+            # trade_profit_order_id = opened_trade.get("trade_profit_order_id")
+            # if stop_loss_order_id:
+            #     self.cancel_order(symbol, stop_loss_order_id)
+            # if trade_profit_order_id:
+            #     self.cancel_order(symbol, trade_profit_order_id)
                 
             # Atualiza o banco de dados para refletir o encerramento total
             self.edit_opened_trades(

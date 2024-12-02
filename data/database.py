@@ -41,6 +41,9 @@ class DataDB:
             data = []
             r = self.db[collection].find(kargs).limit(limit)
             for item in r:
+                # Converte ObjectId para string
+                if "_id" in item:
+                    item["_id"] = str(item["_id"])
                 data.append(item)
             return data
         except errors.InvalidOperation as error:
@@ -48,10 +51,15 @@ class DataDB:
 
     def query_single(self, collection, **kargs):
         try:
-            return self.db[collection].find_one(kargs)
+            result = self.db[collection].find_one(kargs)
+            if result and "_id" in result:
+                # Converte o ObjectId para string
+                result["_id"] = str(result["_id"])
+            return result
         except errors.InvalidOperation as error:
             print("query_single error", error)
-
+            return None
+        
     def query_distinct(self, collection, key):
         try:
             return self.db[collection].distinct(key)
