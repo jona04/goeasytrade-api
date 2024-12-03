@@ -8,6 +8,8 @@ import hashlib
 from data.collector import stream_data_pair
 from data.database import DataDB
 from core.pair_trader import PairTrader
+from operations.pair_trade_executor import PairTradeExecutor
+from core.config_pair_system_manager import ConfigPairSystemManager
 
 from constants.defs import (
     BINANCE_KEY,
@@ -26,6 +28,7 @@ class PairTraderManager:
         self.candle_data = {}  # Armazena os candles históricos para cada ativo
         self.candle_sync = {}  # Controle de sincronização de candles
         self.active_streams = set()
+        self.pair_trade_executor = PairTradeExecutor()
         
     async def init_binance_client(self):
         """Inicializa o cliente Binance e o Socket Manager."""
