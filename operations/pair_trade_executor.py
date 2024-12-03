@@ -1,6 +1,7 @@
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 from data.database import DataDB
+from core.config_pair_system_manager import ConfigPairSystemManager
 import pandas as pd
 from typing import Optional, Dict, Any
 import math
@@ -19,7 +20,7 @@ class PairTradeExecutor:
         """
         self.db = DataDB()
         self.client = Client(api_key=BINANCE_KEY, api_secret=BINANCE_SECRET, tld="com")
-        
+        self.config_pair_system_manager = ConfigPairSystemManager()
     # ------------------
     # MÉTODOS PRINCIPAIS
     # ------------------
@@ -248,32 +249,15 @@ class PairTradeExecutor:
                 
                 # Verifica se o lucro ultrapassou o limiar
                 if profit_percent >= trailing_stop_target:
-                    print(f"Ativando parcial para trade aberto {opened_pair_trade['_id']}. Side = {position_side} | Profit = {profit_percent} | trailing_stop_target = {trailing_stop_target}")
+                    print(f"Fechando trade aberto {opened_pair_trade['_id']}. Side = {position_side} | Profit = {profit_percent} | trailing_stop_target = {trailing_stop_target}")
                     
-                    # Fecha a posição parcial
-                    side = "SELL" if position_side == "LONG" else "BUY"
-                    order = self.client.futures_create_order(
-                        symbol=symbol,
-                        side=side,
-                        type="MARKET",
-                        quantity=quantity,
-                        positionSide=position_side
-                    )
+                    order = self.close_operation(opened_pair_trade, position_side, symbol, quantity, "trailing_stop_target")
                     
                     self.log_pair_order(order)
                     
                     # Cancel SL
                     self.cancel_order(symbol, stop_loss_order_id)
                     
-                    # Atualiza o banco de dados
-                    self.edit_opened_trades(
-                        opened_pair_trader_id=int(opened_pair_trade['_id']),
-                        updates={
-                            "activate": False,
-                            "close_type": "trailing_stop_target",
-                            "stop_loss_order_id": None,
-                        }
-                    )
         except Exception as e:
             print(f"Erro ao verificar e fechar ordens TP/SL: {e}")
             
@@ -302,33 +286,44 @@ class PairTradeExecutor:
                 if profit_percent <= trailing_stop_loss:
                     print(f"Fechando trade aberto {opened_pair_trade['_id']}. Side = {position_side} | Profit = {profit_percent} | trailing_stop_loss = {trailing_stop_loss}")
                     
-                    # Fecha a posição
-                    side = "SELL" if position_side == "LONG" else "BUY"
-                    order = self.client.futures_create_order(
-                        symbol=symbol,
-                        side=side,
-                        type="MARKET",
-                        quantity=quantity,
-                        positionSide=position_side
-                    )
+                    order = self.close_operation(opened_pair_trade, position_side, symbol, quantity, "trailing_stop_loss")
                     
                     self.log_pair_order(order)
                     
                     # Cancel SL
                     self.cancel_order(symbol, stop_loss_order_id)
                     
-                    # Atualiza o banco de dados
-                    self.edit_opened_trades(
-                        opened_pair_trader_id=int(opened_pair_trade['_id']),
-                        updates={
-                            "activate": False,
-                            "close_type": "trailing_stop_loss",
-                            "stop_loss_order_id": None,
-                        }
-                    )
         except Exception as e:
             print(f"Erro ao verificar e fechar ordens TP/SL: {e}")
 
+    def close_operation(self, opened_pair_trade, position_side, symbol, quantity, close_type):
+        # Fecha a posição
+        side = "SELL" if position_side == "LONG" else "BUY"
+        order = self.client.futures_create_order(
+            symbol=symbol,
+            side=side,
+            type="MARKET",
+            quantity=quantity,
+            positionSide=position_side
+        )
+        
+        # Atualiza o banco de dados
+        self.edit_opened_trades(
+            opened_pair_trader_id=int(opened_pair_trade['_id']),
+            updates={
+                "activate": False,
+                "close_type": close_type,
+                "stop_loss_order_id": None,
+            }
+        )
+        
+        # Retorna saldo atual e atualiza available_balance
+        balance = self.get_available_balance()
+        if balance:
+            self.config_pair_system_manager.update_system_available_balance(balance)
+            
+        return order
+    
     def check_break_even(self, current_price):
         """
         Verifica se o lucro percentual atingiu o limiar para ativar o Break Even
@@ -394,31 +389,13 @@ class PairTradeExecutor:
                 print(f"Fechando trade aberto {opened_pair_trade['_id']}. Side = {position_side} | z_score = {z_score}")
                     
                 # Fecha a posição
-                side = "SELL" if position_side == "LONG" else "BUY"
-                order = self.client.futures_create_order(
-                    symbol=symbol,
-                    side=side,
-                    type="MARKET",
-                    quantity=quantity,
-                    positionSide=position_side
-                )
+                order = self.close_operation(opened_pair_trade, position_side, symbol, quantity, "z_score")
 
+                self.log_pair_order(order)
+                    
                 # Cancel SL
                 self.cancel_order(symbol, stop_loss_order_id)
-                    
-                # Atualiza o banco de dados
-                self.edit_opened_trades(
-                    opened_pair_trader_id=int(opened_pair_trade['_id']),
-                    updates={
-                        "activate": False,
-                        "close_type": "Z-Score",
-                        "stop_loss_order_id": None,
-                        "take_profit_order_id": None,
-                    }
-                )
                 
-                print(f"Trade {opened_pair_trade['_id']} atualizado: fechado por Z-Score.")
-            
         except Exception as e:
             print(f"Erro ao verificar Break Even para trade {opened_pair_trade['_id']}: {e}")
             
@@ -555,6 +532,29 @@ class PairTradeExecutor:
             return tp_order
         except BinanceAPIException as e:
             print(f"Erro ao definir Take Profit: {e}")
+            return None
+
+    def get_available_balance(self, asset='USDT'):
+        """
+        Obtém o saldo disponível em USDT na conta de Futuros.
+
+        :param client: Instância autenticada do cliente da Binance API.
+        """
+        try:
+            # Consulta informações da conta de Futuros
+            account_info = self.client.futures_account()
+            
+            # Itera sobre a lista de ativos para encontrar o saldo disponível
+            for item in account_info['assets']:
+                if item['asset'] == asset:
+                    available_balance = float(item['availableBalance'])
+                    return available_balance
+            
+            # Se o ativo não for encontrado, levanta uma exceção
+            raise ValueError(f"Ativo {asset} não encontrado na conta de Futuros.")
+
+        except Exception as e:
+            print(f"Erro ao obter o saldo disponível: {e}")
             return None
 
     # ------------------

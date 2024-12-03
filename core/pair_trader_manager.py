@@ -8,8 +8,6 @@ import hashlib
 from data.collector import stream_data_pair
 from data.database import DataDB
 from core.pair_trader import PairTrader
-from operations.pair_trade_executor import PairTradeExecutor
-from core.config_pair_system_manager import ConfigPairSystemManager
 
 from constants.defs import (
     BINANCE_KEY,
@@ -28,8 +26,6 @@ class PairTraderManager:
         self.candle_data = {}  # Armazena os candles históricos para cada ativo
         self.candle_sync = {}  # Controle de sincronização de candles
         self.active_streams = set()
-        self.pair_trade_executor = PairTradeExecutor()
-        self.config_pair_system_manager = ConfigPairSystemManager()
         
     async def init_binance_client(self):
         """Inicializa o cliente Binance e o Socket Manager."""
@@ -282,11 +278,6 @@ class PairTraderManager:
                     # Todos os ativos têm o mesmo timestamp
                     self._notify_pair_trader(trader, symbol)
                     
-                    # Retorna saldo atual e atualiza available_balance
-                    balance = self.get_available_balance()
-                    if balance:
-                        self.config_pair_system_manager.update_system_available_balance(balance)
-                    
     def _notify_pair_trader(self, trader, symbol):
         """
         Notifica o PairTrader que um novo candle foi recebido para um dos ativos monitorados.
@@ -298,27 +289,3 @@ class PairTraderManager:
             trader.define_strategy(dfs, df_target)
         except Exception as e:
             print(f"Erro ao notificar PairTrader {trader.pair_trader_id}: {e}")
-
-    def get_available_balance(self, asset='USDT'):
-        """
-        Obtém o saldo disponível em USDT na conta de Futuros.
-
-        :param client: Instância autenticada do cliente da Binance API.
-        """
-        try:
-            client = Client(api_key=BINANCE_KEY, api_secret=BINANCE_SECRET, tld="com")
-            # Consulta informações da conta de Futuros
-            account_info = client.futures_account()
-            
-            # Itera sobre a lista de ativos para encontrar o saldo disponível
-            for item in account_info['assets']:
-                if item['asset'] == asset:
-                    available_balance = float(item['availableBalance'])
-                    return available_balance
-            
-            # Se o ativo não for encontrado, levanta uma exceção
-            raise ValueError(f"Ativo {asset} não encontrado na conta de Futuros.")
-
-        except Exception as e:
-            print(f"Erro ao obter o saldo disponível: {e}")
-            return None
