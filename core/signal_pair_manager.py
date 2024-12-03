@@ -20,7 +20,7 @@ class SignalPairManager:
         self.db = DataDB()
         self.pair_trade_executor = PairTradeExecutor()
         
-    def register_signal(self, pair_trader_id: str, signal: Dict, pair_trader):
+    def register_signal(self, pair_trader_id: str, signal: Dict, pair_trader=None):
         """Registra um sinal para um símbolo específico."""
         self.signals[pair_trader_id].append(signal)
         
@@ -32,7 +32,8 @@ class SignalPairManager:
             # Não há ordens em aberto, processa os sinais
             self.process_signals()
             
-            self.send_bot_message(signal, pair_trader)
+            if pair_trader:
+                self.send_bot_message(signal, pair_trader)
             
         else:
             print(f"Ordens abertas encontradas para {pair_trader_id}. Sinal registrado, mas não processado.")

@@ -9,6 +9,7 @@ from data.collector import stream_data_pair
 from data.database import DataDB
 from core.pair_trader import PairTrader
 from operations.pair_trade_executor import PairTradeExecutor
+from core.config_pair_system_manager import ConfigPairSystemManager
 
 from constants.defs import (
     BINANCE_KEY,
@@ -28,6 +29,7 @@ class PairTraderManager:
         self.candle_sync = {}  # Controle de sincronização de candles
         self.active_streams = set()
         self.pair_trade_executor = PairTradeExecutor()
+        self.config_pair_system_manager = ConfigPairSystemManager()
         
     async def init_binance_client(self):
         """Inicializa o cliente Binance e o Socket Manager."""
@@ -77,7 +79,7 @@ class PairTraderManager:
         """Obtem dados históricos de candle para um símbolo específico."""
         print(f"Adicionando dados historicos para {symbol}......")
         now = datetime.now(UTC)
-        past = str(now - timedelta(days=8)) # 8 dias para ficar algo proximo de 10000 candles
+        past = str(now - timedelta(days=20)) # 20 dias para ficar algo proximo de 10000 candles
 
         client = Client(api_key=BINANCE_KEY, api_secret=BINANCE_SECRET, tld="com")
         bars = client.get_historical_klines(symbol=symbol, interval=interval, start_str=past, end_str=None)
@@ -264,7 +266,6 @@ class PairTraderManager:
                     self.pair_trade_executor.check_sl_orders()
                     self.pair_trade_executor.check_trailing_stop_target(current_price)
                     self.pair_trade_executor.check_trailing_stop_loss(current_price)
-                    self.pair_trade_executor.check_zscore_change(opened_pair_trade, trader.df['Z-Score'].values[-1])
                     
             # Se o ativo faz parte do par, marque como atualizado
             if symbol in [trader.target_asset] + trader.cluster_assets:
@@ -281,6 +282,10 @@ class PairTraderManager:
                     # Todos os ativos têm o mesmo timestamp
                     self._notify_pair_trader(trader, symbol)
                     
+                    # Retorna saldo atual e atualiza available_balance
+                    balance = self.get_binance_balance()
+                    self.config_pair_system_manager.update_system_available_balance(balance['available_balance'])
+                    
     def _notify_pair_trader(self, trader, symbol):
         """
         Notifica o PairTrader que um novo candle foi recebido para um dos ativos monitorados.
@@ -292,3 +297,33 @@ class PairTraderManager:
             trader.define_strategy(dfs, df_target)
         except Exception as e:
             print(f"Erro ao notificar PairTrader {trader.pair_trader_id}: {e}")
+
+    def get_binance_balance(self, asset='USDT'):
+        """
+        Retorna o saldo disponível de um ativo específico na Binance.
+        :param api_key: Sua chave de API da Binance.
+        :param api_secret: Sua chave secreta da API da Binance.
+        :param asset: O ativo que deseja consultar (ex.: 'USDT').
+        :return: Saldo disponível do ativo solicitado.
+        """
+        try:
+            client = Client(api_key=BINANCE_KEY, api_secret=BINANCE_SECRET, tld="com")
+            # Obter informações da conta
+            account_info = client.get_account()
+            
+            # Filtrar pelo ativo solicitado
+            for balance in account_info['balances']:
+                if balance['asset'] == asset:
+                    wallet_balance = float(balance['walletBalance'])  # Saldo disponível
+                    available_balance = float(balance['availableBalance'])  # Saldo em ordens
+                    return {
+                        'asset': asset,
+                        'wallet_balance': wallet_balance,
+                        'available_balance': available_balance
+                    }
+            
+            # Caso o ativo não seja encontrado
+            return {'error': f"Ativo {asset} não encontrado."}
+        
+        except Exception as e:
+            return {'error': str(e)}

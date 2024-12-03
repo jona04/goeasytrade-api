@@ -36,7 +36,11 @@ class PairTrader:
         """
         # Sincronizar e calcular dados atualizados
         self.df = self.prepare_data(dfs, df_target)
-                    
+        
+        for opened_pair_trade in self.pair_trade_executor.get_opened_trades(activate=True):
+            if self.pair_trader_id == opened_pair_trade['pair_trader_id']:
+                self.pair_trade_executor.check_zscore_change(opened_pair_trade, self.df['Z-Score'].values[-1])
+        
         # Processar sinais e executar ações baseadas neles
         if not self.df.empty:
             

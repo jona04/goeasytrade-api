@@ -3,7 +3,7 @@ from binance.exceptions import BinanceAPIException
 from data.database import DataDB
 import pandas as pd
 from typing import Optional, Dict, Any
-from binance.client import Client
+import math
 from constants.defs import (
     BINANCE_KEY,
     BINANCE_TESTNET_KEY,
@@ -36,7 +36,7 @@ class PairTradeExecutor:
             position_side = "LONG" if signal["signal_up_pair1"] == 1 else "SHORT"
             
             # Obtém quantidade e alavancagem do banco
-            quantity = self.get_quantity(symbol)
+            quantity, balance = self.get_quantity(symbol)
             leverage = self.get_leverage(symbol)
 
             # Configura alavancagem
@@ -44,7 +44,7 @@ class PairTradeExecutor:
         
             # Chama o método open_trade com os parâmetros traduzidos
             side = "BUY" if position_side == "LONG" else "SELL"
-            print(f"Abrindo trade {symbol} | {side} | {quantity} | {position_side}")
+            print(f"Abrindo trade {symbol} | {side} | qtt = {quantity} | {position_side} | balance = {balance}!")
             order = self.open_trade(
                 symbol=symbol,
                 side = side,
@@ -79,10 +79,15 @@ class PairTradeExecutor:
                     "take_profit_order_id": None,  # Atualizado posteriormente
                     "activate": True,
                     "close_type": None,
-                    "trailing_stop_target": trailing_stop_target_price,
+                    "trailing_stop_target_price": trailing_stop_target_price,
                     "trailing_stop_loss_price": trailing_stop_loss_price,
-                    "stop_loss": sl_price,
+                    "trailing_stop_target_price": trailing_stop_target_price,
+                    "trailing_stop_loss_price": trailing_stop_loss_price,
+                    "stop_loss_price": sl_price,
                     "break_even": False,
+                    "trailing_stop_target": trade_params['trailing_stop_target'],
+                    "trailing_stop_loss": trade_params['trailing_stop_loss'],
+                    "stop_loss": trade_params['sl_percent'],
                     "timestamp": pd.Timestamp.now(),
                 },
                 upsert=True
@@ -454,30 +459,34 @@ class PairTradeExecutor:
         Calcula o preço de Stop Loss.
         :param entry_price: Preço de entrada.
         :param position_side: 'LONG' ou 'SHORT'.
-        :param multiplier: Fator de multiplicação para calcular SL.
+        :param trade_params: Parâmetros do trade (incluindo trailing_stop_loss).
         """
-        sl_percent = abs(float(trade_params['trailing_stop_loss']))
-        
+        trailing_stop_loss = abs(float(trade_params['trailing_stop_loss']))
+
         if position_side == "LONG":
-            return round( entry_price - (entry_price * sl_percent),7)
+            # Stop Loss para LONG deve ser abaixo do preço de entrada.
+            return round(entry_price * (1 - trailing_stop_loss), 7)
         else:
-            return round( entry_price + (entry_price * sl_percent),7)
-        
+            # Stop Loss para SHORT deve ser acima do preço de entrada.
+            return round(entry_price * (1 + trailing_stop_loss), 7)
+
+
     def calculate_trailing_stop_target(self, entry_price, trade_params, position_side):
         """
-        Calcula o preço de Stop Loss.
+        Calcula o preço de Stop Target.
         :param entry_price: Preço de entrada.
         :param position_side: 'LONG' ou 'SHORT'.
-        :param multiplier: Fator de multiplicação para calcular SL.
+        :param trade_params: Parâmetros do trade (incluindo trailing_stop_target).
         """
-        sl_percent = abs(float(trade_params['trailing_stop_target']))
-        
-        if position_side == "LONG":
-            return round( entry_price - (entry_price * sl_percent),7)
-        else:
-            return round( entry_price + (entry_price * sl_percent),7)
-        
+        trailing_stop_target = abs(float(trade_params['trailing_stop_target']))
 
+        if position_side == "LONG":
+            # Stop Target para LONG deve ser acima do preço de entrada.
+            return round(entry_price * (1 + trailing_stop_target), 7)
+        else:
+            # Stop Target para SHORT deve ser abaixo do preço de entrada.
+            return round(entry_price * (1 - trailing_stop_target), 7)
+        
     # ------------------
     # PERSISTÊNCIA
     # ------------------
@@ -560,17 +569,17 @@ class PairTradeExecutor:
         """
         try:
             config_pair_system = self.db.query_single("config_pair_system")
-            balance = config_pair_system['total_earnings']
+            balance = config_pair_system['available_balance']
             percentage_of_total = config_pair_system['percentage_of_total']
             quantity_in_dolar = balance / percentage_of_total
             
             price_data = self.client.get_symbol_ticker(symbol=symbol)
             current_price = float(price_data['price'])
         
-            quantity = round(quantity_in_dolar / current_price,0)
+            quantity = math.floor(quantity_in_dolar / current_price)
             
             if quantity:
-                return quantity
+                return quantity, balance
             else:
                 raise ValueError(f"Configuração de quantidade não encontrada para {symbol}.")
         except Exception as e:
@@ -632,7 +641,7 @@ class PairTradeExecutor:
 
             symbol = opened_pair_trade["symbol"]
             position_side = opened_pair_trade["position_side"]
-            quantity = self.get_quantity(symbol)
+            quantity, _ = self.get_quantity(symbol)
 
             # Cancela o Stop Loss atual, se existir
             stop_loss_order_id = opened_pair_trade.get("stop_loss_order_id")
