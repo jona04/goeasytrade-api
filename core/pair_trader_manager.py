@@ -283,8 +283,9 @@ class PairTraderManager:
                     self._notify_pair_trader(trader, symbol)
                     
                     # Retorna saldo atual e atualiza available_balance
-                    balance = self.get_binance_balance()
-                    self.config_pair_system_manager.update_system_available_balance(balance['available_balance'])
+                    balance = self.get_available_balance()
+                    if balance:
+                        self.config_pair_system_manager.update_system_available_balance(balance)
                     
     def _notify_pair_trader(self, trader, symbol):
         """
@@ -298,32 +299,26 @@ class PairTraderManager:
         except Exception as e:
             print(f"Erro ao notificar PairTrader {trader.pair_trader_id}: {e}")
 
-    def get_binance_balance(self, asset='USDT'):
+    def get_available_balance(self, asset='USDT'):
         """
-        Retorna o saldo disponível de um ativo específico na Binance.
-        :param api_key: Sua chave de API da Binance.
-        :param api_secret: Sua chave secreta da API da Binance.
-        :param asset: O ativo que deseja consultar (ex.: 'USDT').
-        :return: Saldo disponível do ativo solicitado.
+        Obtém o saldo disponível em USDT na conta de Futuros.
+
+        :param client: Instância autenticada do cliente da Binance API.
         """
         try:
             client = Client(api_key=BINANCE_KEY, api_secret=BINANCE_SECRET, tld="com")
-            # Obter informações da conta
-            account_info = client.get_account()
+            # Consulta informações da conta de Futuros
+            account_info = client.futures_account()
             
-            # Filtrar pelo ativo solicitado
-            for balance in account_info['balances']:
-                if balance['asset'] == asset:
-                    wallet_balance = float(balance['walletBalance'])  # Saldo disponível
-                    available_balance = float(balance['availableBalance'])  # Saldo em ordens
-                    return {
-                        'asset': asset,
-                        'wallet_balance': wallet_balance,
-                        'available_balance': available_balance
-                    }
+            # Itera sobre a lista de ativos para encontrar o saldo disponível
+            for item in account_info['assets']:
+                if item['asset'] == asset:
+                    available_balance = float(item['availableBalance'])
+                    return available_balance
             
-            # Caso o ativo não seja encontrado
-            return {'error': f"Ativo {asset} não encontrado."}
-        
+            # Se o ativo não for encontrado, levanta uma exceção
+            raise ValueError(f"Ativo {asset} não encontrado na conta de Futuros.")
+
         except Exception as e:
-            return {'error': str(e)}
+            print(f"Erro ao obter o saldo disponível: {e}")
+            return None
