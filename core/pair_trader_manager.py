@@ -256,15 +256,21 @@ class PairTraderManager:
         # Notifica todas as instâncias de PairTrader para o símbolo quando um candle estiver completo
         for pair_trader_id, trader in self.active_pair_traders.items():
             
-            for opened_pair_trade in self.pair_trade_executor.get_opened_trades(activate=True):
+            # Filtrar trades apenas para o símbolo atualizado
+            trades_for_symbol = [
+                trade for trade in self.pair_trade_executor.get_opened_trades(activate=True)
+                if trade['symbol'] == symbol
+            ]
+            
+            for opened_pair_trade in trades_for_symbol:
                 if trader.target_asset == symbol:
                     current_price = float(candle_data[3])  # Preço de fechamento
                     print(f"Check tralings do ativo {symbol} e preço atual em {current_price}.")
 
                     # Verifica e fecha ordens de SL, se necessário
-                    self.pair_trade_executor.check_sl_orders()
-                    self.pair_trade_executor.check_trailing_stop_target(current_price)
-                    self.pair_trade_executor.check_trailing_stop_loss(current_price)
+                    self.pair_trade_executor.check_sl_orders(symbol)
+                    self.pair_trade_executor.check_trailing_stop_target(symbol, current_price)
+                    self.pair_trade_executor.check_trailing_stop_loss(symbol, current_price)
                     
             # Se o ativo faz parte do par, marque como atualizado
             if symbol in [trader.target_asset] + trader.cluster_assets:

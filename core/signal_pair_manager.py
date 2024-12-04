@@ -36,7 +36,7 @@ class SignalPairManager:
                 self.send_bot_message(signal, pair_trader)
             
         else:
-            print(f"Ordens abertas encontradas para {pair_trader_id}. Sinal registrado, mas não processado.")
+            print(f"[{signal["target_asset"]}] Ordens abertas encontradas para {pair_trader_id}. Sinal registrado, mas não processado.")
             self.signals.clear()  # Limpa os sinais após a consulta
             
     def get_trade_params(self, pair_trader_id: str) -> dict:

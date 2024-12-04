@@ -185,7 +185,7 @@ class PairTradeExecutor:
             return None
     
     
-    def check_sl_orders(self):
+    def check_sl_orders(self, symbol):
         """
         Verifica as ordens de TP e SL associadas a opened_trades abertos.
         Atualiza o banco de dados caso uma ordem tenha sido executada e cancela as ordens restantes.
@@ -199,35 +199,36 @@ class PairTradeExecutor:
             active_trades = self.db.query_all("opened_pair_trades", activate=True)
 
             for trade in active_trades:
-                open_order_id = trade["_id"]
-                stop_loss_order_id = trade.get("stop_loss_order_id")
+                if trade["symbol"] == symbol:
+                    open_order_id = trade["_id"]
+                    stop_loss_order_id = trade.get("stop_loss_order_id")
 
-                # Verifica se as ordens SL ainda estão na lista de ordens abertas
-                sl_active = stop_loss_order_id in open_order_ids
+                    # Verifica se as ordens SL ainda estão na lista de ordens abertas
+                    sl_active = stop_loss_order_id in open_order_ids
 
-                if not sl_active:
-                    close_type = "SL"
+                    if not sl_active:
+                        close_type = "SL"
 
-                    self.cancel_order(trade["symbol"], stop_loss_order_id)
-                    
-                    # Atualiza o banco de dados
-                    self.edit_opened_trades(
-                        opened_pair_trader_id=int(open_order_id),
-                        updates={
-                            "activate": False,
-                            "close_type": close_type,
-                            "stop_loss_order_id": None,
-                            "take_profit_order_id": None,
-                        }
-                    )
-                    print(f"Trade {open_order_id} atualizado: fechado por {close_type}.")
+                        self.cancel_order(trade["symbol"], stop_loss_order_id)
+                        
+                        # Atualiza o banco de dados
+                        self.edit_opened_trades(
+                            opened_pair_trader_id=int(open_order_id),
+                            updates={
+                                "activate": False,
+                                "close_type": close_type,
+                                "stop_loss_order_id": None,
+                                "take_profit_order_id": None,
+                            }
+                        )
+                        print(f"[{symbol}] Trade {open_order_id} atualizado: fechado por {close_type}.")
                     
         except Exception as e:
             print(f"Erro ao verificar e fechar ordens TP/SL: {e}")
 
 
 
-    def check_trailing_stop_target(self, current_price):
+    def check_trailing_stop_target(self, symbol, current_price):
         """
         Verifica as ordens de TP e SL associadas a opened_trades abertos.
         Atualiza o banco de dados caso uma ordem tenha sido executada e cancela as ordens restantes.
@@ -237,32 +238,33 @@ class PairTradeExecutor:
             active_trades = self.db.query_all("opened_pair_trades", activate=True)
 
             for opened_pair_trade in active_trades:
-                entry_price = opened_pair_trade["entry_price"]
-                position_side = opened_pair_trade["position_side"]
-                trailing_stop_target = opened_pair_trade["trailing_stop_target"]
-                symbol = opened_pair_trade["symbol"]
-                quantity = opened_pair_trade["quantity"]
-                stop_loss_order_id = opened_pair_trade["stop_loss_order_id"]
-                
-                # Calcula o lucro percentual
-                profit_percent = self.calculate_profit_percent(entry_price, current_price, position_side)
-                
-                # Verifica se o lucro ultrapassou o limiar
-                if profit_percent >= trailing_stop_target:
-                    print(f"Fechando trade aberto {opened_pair_trade['_id']}. Side = {position_side} | Profit = {profit_percent} | trailing_stop_target = {trailing_stop_target}")
+                if opened_pair_trade["symbol"] == symbol:
+                    symbol = opened_pair_trade["symbol"]
+                    entry_price = opened_pair_trade["entry_price"]
+                    position_side = opened_pair_trade["position_side"]
+                    trailing_stop_target = opened_pair_trade["trailing_stop_target"]
+                    quantity = opened_pair_trade["quantity"]
+                    stop_loss_order_id = opened_pair_trade["stop_loss_order_id"]
                     
-                    order = self.close_operation(opened_pair_trade, position_side, symbol, quantity, "trailing_stop_target")
+                    # Calcula o lucro percentual
+                    profit_percent = self.calculate_profit_percent(entry_price, current_price, position_side)
                     
-                    self.log_pair_order(order)
-                    
-                    # Cancel SL
-                    self.cancel_order(symbol, stop_loss_order_id)
+                    # Verifica se o lucro ultrapassou o limiar
+                    if profit_percent >= trailing_stop_target:
+                        print(f"[{symbol}] Fechando trade aberto {opened_pair_trade['_id']}. Side = {position_side} | Profit = {profit_percent} | trailing_stop_target = {trailing_stop_target}")
+                        
+                        order = self.close_operation(opened_pair_trade, position_side, symbol, quantity, "trailing_stop_target")
+                        
+                        self.log_pair_order(order)
+                        
+                        # Cancel SL
+                        self.cancel_order(symbol, stop_loss_order_id)
                     
         except Exception as e:
             print(f"Erro ao verificar e fechar ordens TP/SL: {e}")
             
             
-    def check_trailing_stop_loss(self, current_price):
+    def check_trailing_stop_loss(self, symbol, current_price):
         """
         Verifica as ordens de TP e SL associadas a opened_trades abertos.
         Atualiza o banco de dados caso uma ordem tenha sido executada e cancela as ordens restantes.
@@ -272,26 +274,27 @@ class PairTradeExecutor:
             active_trades = self.db.query_all("opened_pair_trades", activate=True)
 
             for opened_pair_trade in active_trades:
-                entry_price = opened_pair_trade["entry_price"]
-                position_side = opened_pair_trade["position_side"]
-                trailing_stop_loss = opened_pair_trade["trailing_stop_loss"]
-                symbol = opened_pair_trade["symbol"]
-                quantity = opened_pair_trade["quantity"]
-                stop_loss_order_id = opened_pair_trade["stop_loss_order_id"]
-                
-                # Calcula o lucro percentual
-                profit_percent = self.calculate_profit_percent(entry_price, current_price, position_side)
-                
-                # Verifica se o lucro ultrapassou o limiar
-                if profit_percent <= trailing_stop_loss:
-                    print(f"Fechando trade aberto {opened_pair_trade['_id']}. Side = {position_side} | Profit = {profit_percent} | trailing_stop_loss = {trailing_stop_loss}")
+                if opened_pair_trade["symbol"] == symbol:
+                    symbol = opened_pair_trade["symbol"]
+                    entry_price = opened_pair_trade["entry_price"]
+                    position_side = opened_pair_trade["position_side"]
+                    trailing_stop_loss = opened_pair_trade["trailing_stop_loss"]
+                    quantity = opened_pair_trade["quantity"]
+                    stop_loss_order_id = opened_pair_trade["stop_loss_order_id"]
                     
-                    order = self.close_operation(opened_pair_trade, position_side, symbol, quantity, "trailing_stop_loss")
+                    # Calcula o lucro percentual
+                    profit_percent = self.calculate_profit_percent(entry_price, current_price, position_side)
                     
-                    self.log_pair_order(order)
-                    
-                    # Cancel SL
-                    self.cancel_order(symbol, stop_loss_order_id)
+                    # Verifica se o lucro ultrapassou o limiar
+                    if profit_percent <= trailing_stop_loss:
+                        print(f"[{symbol}] Fechando trade aberto {opened_pair_trade['_id']}. Side = {position_side} | Profit = {profit_percent} | trailing_stop_loss = {trailing_stop_loss}")
+                        
+                        order = self.close_operation(opened_pair_trade, position_side, symbol, quantity, "trailing_stop_loss")
+                        
+                        self.log_pair_order(order)
+                        
+                        # Cancel SL
+                        self.cancel_order(symbol, stop_loss_order_id)
                     
         except Exception as e:
             print(f"Erro ao verificar e fechar ordens TP/SL: {e}")
@@ -324,40 +327,6 @@ class PairTradeExecutor:
             
         return order
     
-    def check_break_even(self, current_price):
-        """
-        Verifica se o lucro percentual atingiu o limiar para ativar o Break Even
-        e, se necessário, realiza o encerramento parcial.
-        :param opened_pair_trade: Trade aberto ativo.
-        :param current_price: Preço atual do mercado.
-        """
-        try:
-            # Obtém todos os opened_trades ativos do banco
-            active_trades = self.db.query_all("opened_pair_trades", activate=True)
-
-            for opened_pair_trade in active_trades:
-
-                entry_price = opened_pair_trade["entry_price"]
-                position_side = opened_pair_trade["position_side"]
-                breakeven_threshold = self.db.query_single("config_system").get("breakeven_profit_threshold", 0)
-
-                # Calcula o lucro percentual
-                profit_percent = self.calculate_profit_percent(entry_price, current_price, position_side)
-
-                # Verifica se o lucro ultrapassou o limiar
-                if profit_percent >= breakeven_threshold and not opened_pair_trade.get("break_even", False):
-                    print(f"Ativando parcial para trade aberto {opened_pair_trade['_id']}. Side = {position_side} | Profit = {profit_percent} | Breakeven = {breakeven_threshold}")
-                    self.adjust_stop_loss(opened_pair_trade, entry_price)
-                    
-                    # Atualiza o campo break_even para True
-                    self.edit_opened_trades(
-                        opened_pair_trader_id=opened_pair_trade["_id"],
-                        updates={"break_even": True}
-                    )
-                
-        except Exception as e:
-            print(f"Erro ao verificar Break Even para trade {opened_pair_trade['_id']}: {e}")
-            
     def check_zscore_change(self, opened_pair_trade, z_score):
         """
         Verifica se o z score mudou de sinal. Caso sim entao encerra operação
@@ -369,7 +338,7 @@ class PairTradeExecutor:
                 print(f"Trade aberto {opened_pair_trade['_id']} não encontrado.")
                 return
 
-            print(f"Analisando Z-Score para {opened_pair_trade['_id']}: {z_score}.")
+            print(f"[{opened_pair_trade["symbol"]}] Analisando Z-Score para {opened_pair_trade['_id']}: {z_score}.")
             
             position_side = opened_pair_trade["position_side"]
             trailing_stop_loss = opened_pair_trade["trailing_stop_loss"]
@@ -386,7 +355,7 @@ class PairTradeExecutor:
             
             if close_operation:
                 
-                print(f"Fechando trade aberto {opened_pair_trade['_id']}. Side = {position_side} | z_score = {z_score}")
+                print(f"[{symbol}]Fechando trade aberto {opened_pair_trade['_id']}. Side = {position_side} | z_score = {z_score}")
                     
                 # Fecha a posição
                 order = self.close_operation(opened_pair_trade, position_side, symbol, quantity, "z_score")
@@ -397,7 +366,7 @@ class PairTradeExecutor:
                 self.cancel_order(symbol, stop_loss_order_id)
                 
         except Exception as e:
-            print(f"Erro ao verificar Break Even para trade {opened_pair_trade['_id']}: {e}")
+            print(f"[{opened_pair_trade["symbol"]}] Erro ao verificar Break Even para trade {opened_pair_trade['_id']}: {e}")
             
     # ------------------
     # CÁLCULOS
@@ -426,10 +395,18 @@ class PairTradeExecutor:
         """
         sl_percent = abs(float(trade_params['sl_percent']))
         
+        precision = 3
+        if trade_params["target_symbol"] == 'ALPHAUSDT':
+            precision = 5
+        elif trade_params["target_symbol"] == 'VIDTUSDT':
+            precision = 7
+        elif trade_params["target_symbol"] == 'VIDTUSDT':
+            precision = 5
+            
         if position_side == "LONG":
-            return round( entry_price - (entry_price * sl_percent),7)
+            return round( entry_price - (entry_price * sl_percent),precision)
         else:
-            return round( entry_price + (entry_price * sl_percent),7)
+            return round( entry_price + (entry_price * sl_percent),precision)
         
     def calculate_trailing_stop_loss(self, entry_price, trade_params, position_side):
         """
@@ -440,12 +417,20 @@ class PairTradeExecutor:
         """
         trailing_stop_loss = abs(float(trade_params['trailing_stop_loss']))
 
+        precision = 3
+        if trade_params["target_symbol"] == 'ALPHAUSDT':
+            precision = 5
+        elif trade_params["target_symbol"] == 'VIDTUSDT':
+            precision = 7
+        elif trade_params["target_symbol"] == 'VIDTUSDT':
+            precision = 5
+            
         if position_side == "LONG":
             # Stop Loss para LONG deve ser abaixo do preço de entrada.
-            return round(entry_price * (1 - trailing_stop_loss), 7)
+            return round(entry_price * (1 - trailing_stop_loss), precision)
         else:
             # Stop Loss para SHORT deve ser acima do preço de entrada.
-            return round(entry_price * (1 + trailing_stop_loss), 7)
+            return round(entry_price * (1 + trailing_stop_loss), precision)
 
 
     def calculate_trailing_stop_target(self, entry_price, trade_params, position_side):
@@ -457,12 +442,20 @@ class PairTradeExecutor:
         """
         trailing_stop_target = abs(float(trade_params['trailing_stop_target']))
 
+        precision = 3
+        if trade_params["target_symbol"] == 'ALPHAUSDT':
+            precision = 5
+        elif trade_params["target_symbol"] == 'VIDTUSDT':
+            precision = 7
+        elif trade_params["target_symbol"] == 'VIDTUSDT':
+            precision = 5
+            
         if position_side == "LONG":
             # Stop Target para LONG deve ser acima do preço de entrada.
-            return round(entry_price * (1 + trailing_stop_target), 7)
+            return round(entry_price * (1 + trailing_stop_target), precision)
         else:
             # Stop Target para SHORT deve ser abaixo do preço de entrada.
-            return round(entry_price * (1 - trailing_stop_target), 7)
+            return round(entry_price * (1 - trailing_stop_target), precision)
         
     # ------------------
     # PERSISTÊNCIA
@@ -547,7 +540,7 @@ class PairTradeExecutor:
             # Itera sobre a lista de ativos para encontrar o saldo disponível
             for item in account_info['assets']:
                 if item['asset'] == asset:
-                    available_balance = float(item['availableBalance'])
+                    available_balance = float(item['walletBalance'])
                     return available_balance
             
             # Se o ativo não for encontrado, levanta uma exceção
@@ -569,7 +562,7 @@ class PairTradeExecutor:
         """
         try:
             config_pair_system = self.db.query_single("config_pair_system")
-            balance = config_pair_system['available_balance']
+            balance = (config_pair_system['available_balance']-5)
             percentage_of_total = config_pair_system['percentage_of_total']
             quantity_in_dolar = balance / percentage_of_total
             
@@ -597,7 +590,8 @@ class PairTradeExecutor:
             if config_pair_assets and "leverage" in config_pair_assets:
                 return config_pair_assets["leverage"]
             else:
-                raise ValueError(f"Configuração de alavancagem não encontrada para {symbol}.")
+                print(f"Configuração de alavancagem não encontrada para {symbol}.")
+                return 1
         except Exception as e:
             print(f"Erro ao obter alavancagem para {symbol}: {e}")
             return None
