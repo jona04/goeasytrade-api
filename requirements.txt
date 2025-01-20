@@ -12,3 +12,5 @@ python-binance
 pytest-cov
 pytest-asyncio
 python-telegram-bot
+mplfinance
+scikit-learn
